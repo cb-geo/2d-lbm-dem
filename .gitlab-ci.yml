@@ -1,0 +1,7 @@
+# Minimal GCC build
+GCC build:
+  script:
+    - make clean && make -j4
+  tags:
+    - cb-geo
+
