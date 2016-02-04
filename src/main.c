@@ -1317,8 +1317,6 @@ void forces_fluid() {
                                       ey[0 :], f[0 :][0 :][0 :], ex[0 :])
   {
     for (i = 0; i < nbgrains; i++) {
-      // sum_f1=sum_f2=sum_f3=0.0;
-      // sum2_f1=sum2_f2=sum2_f3=0.0;
       fhf1[i] = fhf2[i] = fhf3[i] = 0.;
       //#pragma acc loop
       for (y = 0; y < ly; y++) {
@@ -1495,7 +1493,7 @@ void acceleration_grains() {
     }
   }
 
-  // Forces on le Top Wall
+  // Forces on the Top Wall
 
   for (i = 0; i < nNeighWallt; i++) {
     dn = -g[neighbourWallT[i]].x2 - g[neighbourWallT[i]].r + Mhy;
@@ -1506,7 +1504,7 @@ void acceleration_grains() {
       g[neighbourWallT[i]].a3 = g[neighbourWallT[i]].a3 + fji.f3;
     }
   }
-  // Forces on le Wall left
+  // Forces on the Left Wall
 
   for (i = 0; i < nNeighWallL; i++) {
     dn = g[neighbourWallL[i]].x1 - g[neighbourWallL[i]].r - Mgx;
@@ -1535,19 +1533,15 @@ void acceleration_grains() {
     }
   }
 
-  // calcul acc
+  // calculate acceleration
   for (i = 0; i <= nbgrains - 1; i++) {
-    // printf("moment (%d)= %f\n",i,g[i].a3,i,g[i].a3/g[i].It);
     g[i].a1 = g[i].a1 / g[i].m + ((g[i].m - g[i].mw) / g[i].m) * xG;
     g[i].a2 = (g[i].a2 / g[i].m) + ((g[i].m - g[i].mw) / g[i].m) * yG;
     g[i].a3 = g[i].a3 / g[i].It;
-    // printf("acc(%d)= %f\n",i,g[i].a3);
   }
-  // printf("acceleration grain (nbgrains-1) %f\n",g[nbgrains-1].a3);
 }
-//**********************************************************************
 
-//-------------------------------------------------
+//**********************************************************************
 void initVerlet() {
   int i, j;
   int jneighbours;
@@ -1847,8 +1841,6 @@ int main(int argc, char** argv) {
   c = dx / dtLB;
   dt = dtLB / npDEM;
   dt2 = dt * dt;
-
-  // write_strob(_INIT_); //JYD
 
   printf("dtLB=%le,  dtmax=%le,   dt=%le,   npDEM=%d,   c=%lf\n", dtLB, dtmax,
          dt, npDEM, c);
