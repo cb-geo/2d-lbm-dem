@@ -4,4 +4,6 @@ GCC build:
     - make 
   tags:
     - cb-geo
+  only:
+    - master
 
