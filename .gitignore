@@ -21,3 +21,8 @@ bin/mgp*
 bin/densities*
 bin/LBM*
 bin/press*
+results
+CMakeCache.txt
+CMakeFiles/
+Makefile
+cmake_install.cmake

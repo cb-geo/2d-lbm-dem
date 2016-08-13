@@ -10,13 +10,13 @@
 #define _FLUIDE_  // Switch on or off FLUID
 
 // Maximum number of soil grains
-#define nbgrainsMax 5000
+#define nbgrainsMax 6500
 
 // Minimum number of soil grains
 #define nbgrains_bas 1
 
 // Dimension of the LBM Fluid domain
-#define lx 2000
+#define lx 4500
 #define ly 1000
 
 #define pi 3.14159265358979
@@ -71,7 +71,7 @@ double rMin_LB = 10.;
 // Fluid kinematic viscosity
 double nu = 1e-6;  // 15.5e-6 for air and 1e-6 for water at 293K or 20C
 double press[lx][ly];
-double reductionR = 0.9;  // LBM reduced grain diameter
+double reductionR = 0.95;  // LBM reduced grain diameter
 
 //***********   Data DEM    ********************
 double G = 9.81;
@@ -385,12 +385,12 @@ void write_forces() {
   // sprintf(filename,"DEM_Grains%.6i.dat",nFile);
   sprintf(nomfile, "DEM%.6i.ps", nFile);
   outfile1 = fopen(nomfile, "w");
-  float margin = 10 * g[0].r, hrx1 = 3000, hry2 = 500;
+  float margin = 10 * g[0].r, hrx1 = 4500, hry2 = 1000;
   fprintf(outfile1, "%%!PS-Adobe-3.0 EPSF-3.0 \n");
-  fprintf(outfile1, "%%BoundingBox: %f %f %f %f \n", -margin, -margin,
+  fprintf(outfile1, "%%%BoundingBox: %f %f %f %f \n", -margin, -margin,
           hrx1 + margin, hry2 + margin);
-  fprintf(outfile1, "%%Creator: Krishna Kumar \n");
-  fprintf(outfile1, "%%Title: DEM Grains & Forces \n");
+  fprintf(outfile1, "%%%Creator: Krishna Kumar \n");
+  fprintf(outfile1, "%%%Title: DEM Grains & Forces \n");
   fprintf(outfile1, "0.1 setlinewidth 0.0 setgray \n");
   for (i = 0; i <= nbgrains; i++)
     fprintf(outfile1,
@@ -1318,37 +1318,39 @@ void forces_fluid() {
   {
     for (i = 0; i < nbgrains; i++) {
       fhf1[i] = fhf2[i] = fhf3[i] = 0.;
+    }
+    //	  #pragma acc loop
+    for (x = 0; x < lx; x++) {
       //#pragma acc loop
       for (y = 0; y < ly; y++) {
-        //	  #pragma acc loop
-        for (x = 0; x < lx; x++) {
-          if (obst[x][y] == i)  //&& act[x][y][z]==1
-          {
+        i = obst[x][y];
+        if (i >= 0)  //&& act[x][y][z]==1
+        {
 // Search fluid nodes neighbors
 #pragma acc for independent
-            for (iLB = 1; iLB < Q; iLB++) {
-              next_x = x + ex[iLB];
-              next_y = y + ey[iLB];
+          for (iLB = 1; iLB < Q; iLB++) {
+            next_x = x + ex[iLB];
+            next_y = y + ey[iLB];
 
-              if (iLB <= half)
-                halfq = half;
-              else
-                halfq = -half;
-              if (obst[next_x][next_y] != i) {
-                fnx = (f[x][y][iLB + halfq] + f[next_x][next_y][iLB]) *
-                      ex[iLB + halfq];
-                fny = (f[x][y][iLB + halfq] + f[next_x][next_y][iLB]) *
-                      ey[iLB + halfq];
-                fhf1[i] = fhf1[i] + fnx;
-                fhf2[i] = fhf2[i] + fny;
-                fhf3[i] = fhf3[i] - fnx * (y - (g[i].x2 - Mby) / dx) +
-                          fny * (x - (g[i].x1 - Mgx) / dx);
-              }
+            if (iLB <= half)
+              halfq = half;
+            else
+              halfq = -half;
+            if (obst[next_x][next_y] != i) {
+              fnx = (f[x][y][iLB + halfq] + f[next_x][next_y][iLB]) *
+                    ex[iLB + halfq];
+              fny = (f[x][y][iLB + halfq] + f[next_x][next_y][iLB]) *
+                    ey[iLB + halfq];
+              fhf1[i] = fhf1[i] + fnx;
+              fhf2[i] = fhf2[i] + fny;
+              fhf3[i] = fhf3[i] - fnx * (y - (g[i].x2 - Mby) / dx) +
+                        fny * (x - (g[i].x1 - Mgx) / dx);
             }
           }
         }
       }
-
+    }
+    for (i = 0; i < nbgrains; i++) {
       fhf1[i] =
           fhf1[i] * rho_moy * 9 * nu * nu / (dx * (tau - 0.5) * (tau - 0.5));
       fhf2[i] =
