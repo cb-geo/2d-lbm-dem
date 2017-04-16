@@ -1,11 +1,10 @@
 2D Lattice Boltzmann -Discrete Element Method
-==============================================
-> Cambridge-Berkeley Computational Geomechanics
+=============================================
+> Cambridge Berkeley - Geomechanics
 
-## Author(s)
-* Krishna Kumar, Department of Engineering, University of Cambridge
-* Jean-Yves Delenne, INRA, France
-* Kenichi Soga, University of California, Berkeley
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://raw.githubusercontent.com/cb-geo/lbm-dem/master/license.md)
+[![CircleCI](https://circleci.com/gh/cb-geo/2d-lbm-dem.svg?style=svg)](https://circleci.com/gh/cb-geo/2d-lbm-dem)
+[![](https://img.shields.io/github/issues-raw/cb-geo/2d-lbm-dem.svg)](https://github.com/cb-geo/2d-lbm-dem/issues)
 
 ## Prerequisites
 OpenACC v1.0 or higher
