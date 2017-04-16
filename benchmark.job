@@ -1,0 +1,19 @@
+#!/bin/bash
+#SBATCH -J "lbmdem benchmark"
+#SBATCH -n1
+#SBATCH -c#CORES#
+#SBATCH -ostdout
+#SBATCH -estderr
+#SBATCH -t03:59:00
+
+set -e
+trap "touch done" EXIT
+
+source /etc/profile.d/modules.sh
+module purge
+module load #MODULE#
+
+export OMP_NUM_THREADS=#CORES#
+#CC# #CFLAGS# main.c -lm -o lbmdem
+
+/usr/bin/time -f 'time: %e' ./lbmdem #INPUT_FILE#

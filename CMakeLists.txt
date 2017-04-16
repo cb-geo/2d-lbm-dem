@@ -1,21 +1,21 @@
 cmake_minimum_required(VERSION 3.0)
 project(2d-lbm-dem C)
 set(EXECUTABLE_OUTPUT_PATH "bin")
-add_executable(lbmdem src/main.c)
+add_executable(lbmdem src/main.c src/visit_writer.c)
 target_link_libraries(lbmdem m)
 
-option (USE_AUTOPARALLEL  "Use compiler auto-parallelisation" ON)
-option (USE_OPENMP        "Use OpenMP directives" ON)
-option (USE_OPENACC       "Use OpenACC directives" ON)
+option (USE_AUTOPARALLEL  "Use compiler auto-parallelisation" OFF)
+option (USE_OPENMP        "Use OpenMP directives" OFF)
+option (USE_OPENACC       "Use OpenACC directives" OFF)
 
 
-set (C_FLAGS_GNU   "-std=c99 -g")
-set (C_FLAGS_Intel "-std=c99 -g")
-set (C_FLAGS_PGI   "-std=c99 -g")
+set (C_FLAGS_GNU   "-std=c99 -g -Wall -Wextra -lm")
+set (C_FLAGS_Intel "-std=c99 -g -diag-enable=all -qopt-report=5 -qopt-report-phase=all")
+set (C_FLAGS_PGI   "-c99 -g -Minfo=all")
 set (C_FLAGS "${C_FLAGS_${CMAKE_C_COMPILER_ID}}")
 
-set (C_FLAGS_RELEASE_GNU   "-Ofast -lm -std=c99 -march=native -flto -fipa-pta -funsafe-math-optimizations -fno-math-errno -fno-trapping-math")
-set (C_FLAGS_RELEASE_Intel "-O3 -xHost -ipo -fp-model fast=2 -no-prec-div")
+set (C_FLAGS_RELEASE_GNU   "-Ofast -march=native -flto -fipa-pta -funsafe-math-optimizations -fno-math-errno -fno-trapping-math")
+set (C_FLAGS_RELEASE_Intel "-O3 -xHost -ipo -restrict -fp-model fast=2 -no-prec-div")
 set (C_FLAGS_RELEASE_PGI   "-O3 -Mipa")
 set (C_FLAGS_RELEASE "${C_FLAGS_RELEASE_${CMAKE_C_COMPILER_ID}}")
 
@@ -52,4 +52,3 @@ if (USE_OPENACC)
   message("== Building with OpenACC")
   set (CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} ${C_FLAGS_OPENACC}")
 endif()
-

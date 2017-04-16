@@ -1,0 +1,134 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jube>
+  <benchmark name="lbmdem" outpath="~/scratch/2d-lbm-dem_benchmark">
+    <comment>Benchmarks for lbmdem code.</comment>
+
+    <parameterset name="base_params">
+      <parameter name="test_case">a08d83,a6d83,slope</parameter>
+      <parameter name="scale">0.75,1.0,1.25,1.5,1.75</parameter>
+      <parameter name="compiler">gnu,intel,pgi</parameter>
+      <parameter name="cores" type="int">1,2,4,8,16</parameter>
+    </parameterset>
+
+    <parameterset name="case_a08d83">
+      <parameter name="lx_base" type="int">   2000 </parameter>
+      <parameter name="ly_base" type="int">   1000 </parameter>
+      <parameter name="nbgrains" type="int">  5000 </parameter>
+    </parameterset>
+    <parameterset name="case_a6d83">
+      <parameter name="lx_base" type="int">   2000 </parameter>
+      <parameter name="ly_base" type="int">   1000 </parameter>
+      <parameter name="nbgrains" type="int">  5000 </parameter>
+    </parameterset>
+    <parameterset name="case_slope">
+      <parameter name="lx_base" type="int">  12500 </parameter>
+      <parameter name="ly_base" type="int">   2500 </parameter>
+      <parameter name="nbgrains" type="int"> 15000 </parameter>
+    </parameterset>
+
+    <parameterset name="simulation_params">
+      <parameter name="lx" mode="python" type="int"> int(${lx_base} * ${scale}) </parameter>
+      <parameter name="ly" mode="python" type="int"> int(${ly_base} * ${scale}) </parameter>
+    </parameterset>
+
+    <parameterset name="compiler_gnu">
+      <parameter name="cc">gcc</parameter>
+      <parameter name="config">auto,openmp</parameter>
+      <parameter name="version">5.3.0</parameter>
+      <parameter name="module">gcc/${version}</parameter>
+    </parameterset>
+    <parameterset name="compiler_gnu_auto">
+      <parameter name="cflags" separator=";">-Ofast -march=native -fwhole-program -flto -fno-math-errno -funsafe-math-optimizations -ftree-loop-if-convert -ftree-loop-distribution -ftree-loop-im -ftree-loop-ivcanon -fivopts -ftree-parallelize-loops=$cores</parameter>
+    </parameterset>
+    <parameterset name="compiler_gnu_openmp">
+      <parameter name="cflags" separator=";">-Ofast -march=native -fwhole-program -flto -fno-math-errno -funsafe-math-optimizations -ftree-loop-if-convert -ftree-loop-distribution -ftree-loop-im -ftree-loop-ivcanon -fivopts -fopenmp</parameter>
+    </parameterset>
+
+    <parameterset name="compiler_intel">
+      <parameter name="cc">icc</parameter>
+      <parameter name="config">auto,openmp</parameter>
+      <parameter name="version">16.0.3.210</parameter>
+      <parameter name="module">intel/cce/${version}</parameter>
+    </parameterset>
+    <parameterset name="compiler_intel_auto">
+      <parameter name="cflags" separator=";">-O3 -ipo -xHost -parallel -fp-model fast=2 -no-prec-div</parameter>
+    </parameterset>
+    <parameterset name="compiler_intel_openmp">
+      <parameter name="cflags" separator=";">-O3 -ipo -xHost -qopenmp -fp-model fast=2 -no-prec-div</parameter>
+    </parameterset>
+
+    <parameterset name="compiler_pgi">
+      <parameter name="cc">pgcc</parameter>
+      <parameter name="config">auto,openmp</parameter>
+      <parameter name="version">16.5</parameter>
+      <parameter name="module">pgi/${version}</parameter>
+    </parameterset>
+    <parameterset name="compiler_pgi_auto">
+      <parameter name="cflags" separator=";">-fast -O4 -Mipa -Mconcur</parameter>
+    </parameterset>
+    <parameterset name="compiler_pgi_openmp">
+      <parameter name="cflags" separator=";">-fast -O4 -Mipa -mp</parameter>
+    </parameterset>
+
+    <fileset name="files">
+      <copy>benchmark.job</copy>
+      <copy name="${test_case}.data">bin/${test_case}.data</copy>
+      <copy name="main.c">src/main.c</copy>
+    </fileset>
+
+    <substituteset name="prepare_job">
+      <iofile in="benchmark.job" out="job"/>
+      <sub source="#CORES#" dest="${cores}"/>
+      <sub source="#INPUT_FILE#" dest="${test_case}.data"/>
+      <sub source="#MODULE#" dest="${module}"/>
+      <sub source="#CC#" dest="${cc}"/>
+      <sub source="#CFLAGS#" dest="${cflags} -DBENCH -Dscale=$scale -Dlx=$lx -Dly=$ly -DnbgrainsMax=$nbgrains"/>
+    </substituteset>
+
+    <step name="submit_job">
+      <use>files</use>
+      <use>base_params</use>
+      <use>case_${case}</use>
+      <use>simulation_params</use>
+      <use>compiler_${compiler}</use>
+      <use>compiler_${compiler}_${config}</use>
+      <use>prepare_job</use>
+      <do done_file="done">sbatch -ASUPPORT -psandybridge job</do>
+    </step>
+
+    <patternset name="pattern">
+      <pattern name="walltime" type="float">time: $jube_pat_fp</pattern>
+      <pattern name="final_density" type="float">final_density: $jube_pat_fp</pattern>
+    </patternset>
+
+    <analyser name="patterns">
+      <use>pattern</use>
+      <analyse step="submit_job">
+        <file>stderr</file>
+      </analyse>
+    </analyser>
+
+    <result>
+      <use>patterns</use>
+      <table name="result" separator=" " sort="test_case,scale,compiler,version,cores">
+        <column>test_case</column>
+        <column>scale</column>
+        <column>compiler</column>
+        <column>config</column>
+        <column>version</column>
+        <column>cores</column>
+        <column>walltime</column>
+      </table>
+      <table name="result_pretty" style="pretty" sort="test_case,scale,compiler,version,config,cores">
+        <column>test_case</column>
+        <column>scale</column>
+        <column>compiler</column>
+        <column>config</column>
+        <column>version</column>
+        <column>cores</column>
+        <column>walltime</column>
+        <column>final_density</column>
+      </table>
+    </result>
+  </benchmark>
+</jube>
