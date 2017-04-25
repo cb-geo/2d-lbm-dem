@@ -1270,9 +1270,7 @@ void forces_fluid(int nx, int ny, real f[nx][ny][Q], int nbgrains, struct grain 
   for (int i = 0; i < nbgrains; ++i) {
     const real xc = (g[i].x1 - Mgx) / dx;
     const real yc = (g[i].x2 - Mby) / dx;
-    const real r2 = rLB[i] * rLB[i];
     const real rbl0 = g[i].r / dx;
-    const real R2 = rbl0 * rbl0;
 
     const int xi = max(xc - rbl0, 1);
     const int xf = min(xc + rbl0, nx-2);
