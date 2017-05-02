@@ -1,16 +1,15 @@
 # Contributing guidelines
 
-Contributing to CB-Geo LBM-DEM will require a signed copy of the Contributor License Agreement (CLA). The CLA is an adapted version of the Harmony Contributor Agreement. 
+Contributing to CB-Geo LBM-DEM will require you to electronically signed a copy of the Contributor License Agreement (CLA). 
 
 Signing a contributor agreement is necessary for many reasons. For an overview, see [http://oss-watch.ac.uk/resources/cla](http://oss-watch.ac.uk/resources/cla). 
 
-You can download the CLA from the repo at [https://github.com/cb-geo/2d-lbm-dem/tree/develop/cla](https://github.com/cb-geo/2d-lbm-dem/tree/develop/cla). 
+You can view the CLA at [https://gist.github.com/cbgeo/7a8541e1d51f131be1d4b7444340dff1](https://gist.github.com/cbgeo/7a8541e1d51f131be1d4b7444340dff1). 
 
-Please send a signed copy to us via email to [cla@cb-geo.com](mailto:cla@cb-geo.com).
-
-After we have received your agreement, we will approve your GitHub account to make contributions. GitHub merge requests are the only acceptable facility for code submission. Please do not send patches by email. 
+After we have signed the Copyright License Agreement via [https://cla-assistant.io/](https://cla-assistant.io/), we will approve your GitHub account to make contributions. GitHub pull requests are the only acceptable facility for code submission. Please do not send patches by email. 
 
 Thank you for contributing!
+
 
 ## Git Commit Messages
 
@@ -34,12 +33,14 @@ Thank you for contributing!
     * :bug: `:bug:` when fixing a bug
     * :fire: `:fire:` when removing code or files
     * :green_heart: `:green_heart:` when fixing the CI build
-    * :white_check_mark: `:white_check_mark:` when adding tests
+    * :dart: `:dart:` when adding tests
     * :lock: `:lock:` when dealing with security
     * :arrow_up: `:arrow_up:` when upgrading dependencies
     * :arrow_down: `:arrow_down:` when downgrading dependencies
     * :speaker: `:speaker:` when adding logging
     * :mute: `:mute:` when reducing logging
     * :shirt: `:shirt:` when removing linter warnings
+    * :wrench: `:wrench:` Fixing broken stuff
+    * :paperclip: `:paperclip:` Merge changes
 
 

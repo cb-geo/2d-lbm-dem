@@ -5,6 +5,7 @@
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://raw.githubusercontent.com/cb-geo/lbm-dem/master/license.md)
 [![CircleCI](https://circleci.com/gh/cb-geo/2d-lbm-dem.svg?style=svg)](https://circleci.com/gh/cb-geo/2d-lbm-dem)
 [![](https://img.shields.io/github/issues-raw/cb-geo/2d-lbm-dem.svg)](https://github.com/cb-geo/2d-lbm-dem/issues)
+[![CLA assistant](https://cla-assistant.io/readme/badge/cb-geo/2d-lbm-dem)](https://cla-assistant.io/cb-geo/2d-lbm-dem)
 
 ## Prerequisites
 OpenACC v1.0 or higher
