@@ -22,13 +22,13 @@
 
 // Dimension of the LBM Fluid domain
 #ifndef scale
-#define scale 2.
+#define scale 1.
 #endif
 #ifndef lx
-#define lx 2000
+#define lx 7000
 #endif
 #ifndef ly
-#define ly 1000
+#define ly 5000
 #endif
 
 #ifdef SINGLE_PRECISION
@@ -95,7 +95,7 @@ real reductionR = 0.95;  // LBM reduced grain diameter
 
 //***********   Data DEM    ********************
 real G = 9.81;
-real angleG = 0.;
+real angleG = -0.0872665;
 real xG, yG;
 real dt;  //=5.e-8;
 real dt2;
