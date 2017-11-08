@@ -1,25 +1,46 @@
 /*************** 2D LBM-DEM Code **************************/
-#include <omp.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <math.h>
 #include <string.h>
 #include <unistd.h>
 #include <time.h>
+#include <assert.h>
 
 #include <openacc.h>
 
-//#define _FLUIDE_  // Switch on or off FLUID
+#ifdef _OPENMP
+#include <omp.h>
+#endif
+
+#include "visit_writer.h"
+
+// Switch on or off FLUID
+#define _FLUIDE_  
 
 // Maximum number of soil grains
+#ifndef nbgrainsMax
 #define nbgrainsMax 56000
-
-// Minimum number of soil grains
-#define nbgrains_bas 1
+#endif
 
 // Dimension of the LBM Fluid domain
-#define lx 50000
-#define ly 10000
+#ifndef scale
+#define scale 2.
+#endif
+#ifndef lx
+#define lx 5000
+#endif
+#ifndef ly
+#define ly 2000
+#endif
+
+#ifdef SINGLE_PRECISION
+typedef float real;
+#define FLOAT_FORMAT "%e"
+#else
+typedef double real;
+#define FLOAT_FORMAT "%le"
+#endif
 
 #define pi 3.14159265358979
 
@@ -31,10 +52,11 @@
 #define Q 9
 int nbgrains;
 // width of LBM grid size, time step, lattice speed
-double dx, dtLB, c, c_squ;
-double w[Q] = {4. / 9,  1. / 36, 1. / 9,  1. / 36, 1. / 9,
+real dx, dtLB, c, c_squ;
+real _w[Q] = {4. / 9,  1. / 36, 1. / 9,  1. / 36, 1. / 9,
                1. / 36, 1. / 9,  1. / 36, 1. / 9};
-double f[lx][ly][Q];
+real * restrict w = _w;
+real (* restrict f)[ly][Q];
 
 // ************************************
 // *                                  *
@@ -48,166 +70,148 @@ double f[lx][ly][Q];
 // *                                  *
 // ************************************
 
-int ex[Q] = {0, -1, -1, -1, 0, 1, 1, 1, 0};
-int ey[Q] = {0, 1, 0, -1, -1, -1, 0, 1, 1};
+int ex[Q] = {0, -1, -1, -1,  0,  1, 1, 1, 0};
+int ey[Q] = {0,  1,  0, -1, -1, -1, 0, 1, 1};
 
 // average fluid density
-double rho_moy = 1000;  // air density =1 or water =1000 or 999.7 at 20
-double rho_outlet, q_outlet;
+real rho_moy = 1000;  // air density =1 or water =1000 or 999.7 at 20
+real rho_outlet, q_outlet;
 
 // relaxation parameter
-double tau = 0.506;
-double s2 = 1.5, s3 = 1.4, s5 = 1.5, s7 = 1.5, s8 = 1.8868,
+real tau = 0.506;
+real s2 = 1.5, s3 = 1.4, s5 = 1.5, s7 = 1.5, s8 = 1.8868,
        s9 = 1.8868;  // s8=1.6666667,s9=1.6666667;
 
 // obstacle array
-int obst[lx][ly];
-double grains[lx][ly];
+int (* restrict obst)[ly];
 // obstacle activity  array
-int act[lx][ly];
-double delta[lx][ly][Q];
+int (* restrict act)[ly];
+real (* restrict delta)[ly][Q];
 
 // LB diameter for the smallest disk (in nodes number)
-double rMin_LB = 10.;
+real rMin_LB = 10.;
 
 // Fluid kinematic viscosity
-double nu = 1e-6;  // 15.5e-6 for air and 1e-6 for water at 293K or 20C
-double press[lx][ly];
-double reductionR = 0.9;  // LBM reduced grain diameter
+real nu = 1e-6;  // 15.5e-6 for air and 1e-6 for water at 293K or 20C
+real (* restrict press)[ly];
+real reductionR = 0.95;  // LBM reduced grain diameter
 
 //***********   Data DEM    ********************
-double G = 9.81;
-double angleG = -0.349066;
-double xG, yG;
-double dt;  //=5.e-8;
-double dt2;
+real G = 9.81;
+real angleG = 0.;
+real xG, yG;
+real dt;  //=5.e-8;
+real dt2;
 
 // Spring stiffness
-double km = 3e+6, kg = 1.6e+6;  // 2e8 1.6e8
-double kt = 1.0e+6, ktm = 2e+6;  /// changed to higher for lesser
+real km = 3e+6, kg = 1.6e+6;  // 2e8 1.6e8
+real kt = 1.0e+6, ktm = 2e+6;  /// changed to higher for lesser
                                  /// interpenetration in sample generation 1.3e8
-double nug = 6.4e+1;  // 1.1e1
-double num = 8.7e+1, numb = 8.7e+1;  // 1.5e1
-double nuf = 1.5e-1, nugt = 5e-1;  // frictionless packing nugt
-double mu = .5317;
-double mug = 0.0;  // Mu for assembling
-double mum = .466, mumb = .466;  // 0.466 //0.53 0.51 0.43
-double murf = 0.01;  // 0.01
-double r = 1e-3;  // 5e-4;v
-double distVerlet = 5e-4;  // changed to 1e-6 from 1e-3 for error
+real nug = 6.4e+1;  // 1.1e1
+real num = 8.7e+1, numb = 8.7e+1;  // 1.5e1
+real nuf = 1.5e-1, nugt = 5e-1;  // frictionless packing nugt
+real mu = .5317;
+real mug = 0.0;  // Mu for assembling
+real mum = .466, mumb = .466;  // 0.466 //0.53 0.51 0.43
+real murf = 0.01;  // 0.01
+real r = 1e-3;  // 5e-4;v
+real distVerlet = 5e-4;  // changed to 1e-6 from 1e-3 for error
 long UpdateVerlet = 100.;
-double dtt = 0.0;  // Time after which wall to prepare sample is removed
-double iterDEM = 100.;  // number of DEM iterations per LBM
+real dtt = 0.0;  // Time after which wall to prepare sample is removed
+real iterDEM = 100.;  // number of DEM iterations per LBM
 
 // Tracked stats
 // EPE-Effective potential energy
 // Total Wall Friction - WF,
 // SE- Strain Energy ESE & IFR- Total Internal Friction
-double xfront, height, energie_cin, energie_x, energie_y, energie_teta,
+real xfront, height, energie_cin, energie_x, energie_y, energie_teta,
     energy_p, energy_EPE, zmean, SE, ESE, WF,
     IFR;
-double TSE = 0.0, TBW = 0.0, INCE = 0.0, TSLIP = 0.0,
+real TSE = 0.0, TBW = 0.0, INCE = 0.0, TSLIP = 0.0,
        TRW =
            0.0;  // Total Body Work and Strain Energy TRW_ Total Rotational Work
-double pf = 0., pft = 0., pff = 0.;  // previous force
-double ic = 0;
+real pf = 0., pft = 0., pff = 0.;  // previous force
+real ic = 0;
 
 // ********   Control parameters   *************
 // Number of DEM steps in LB
 int npDEM;
-double rLB[nbgrainsMax];
+real *rLB;
 
 int stepView = 100;
 int stepPrint = 200;
 int stepConsole = 100;
 
-int stepStrob = 4000;  //visualisation steps
+int stepStrob = 1000;  //visualisation steps
 int stepFilm = 2000;
 
 FILE* s_stats;
-char filename_sample[25];
 
 int nFile = 0;  // Nth File saves LB
 
 int cptFlash;
-int cumul[nbgrainsMax];
-int neighbours[nbgrainsMax * 10];
+int *cumul;
+int * restrict neighbours;
 // NeighbourWall Bottom, Right, Left & Top
-int neighbourWallB[nbgrainsMax];
-int neighbourWallR[nbgrainsMax];
-int neighbourWallL[nbgrainsMax];
-int neighbourWallT[nbgrainsMax];
+int * restrict neighbourWallB;
+int * restrict neighbourWallR;
+int * restrict neighbourWallL;
+int * restrict neighbourWallT;
 
 int nNeighWallb, nNeighWallt, nNeighWallL, nNeighWallR;
 
 int start = 0;
 long nbsteps = 0;
 int vib = 0;
-double freq = 5;
-double amp = 4.e-4;
-double t = 0;
+real freq = 5;
+real amp = 4.e-4;
+real t = 0;
 
 // Luding Friction Model
 struct contact {
   int i, j;
-  double nx, ny;  // normal vector from j to i
-  double fn, ft;  // force component in local frame
-} c1[nbgrainsMax][nbgrainsMax], c2[nbgrainsMax];
+  real nx, ny;  // normal vector from j to i
+  real fn, ft;  // force component in local frame
+};
+// struct contact (*c1)[nbgrainsMax];
+// struct contact *c2;
 
 struct force {
-  double f1, f2, f3;
+  real f1, f2, f3;
 };
-struct force fhf[nbgrainsMax];
-double fhf1[nbgrainsMax], fhf2[nbgrainsMax], fhf3[nbgrainsMax];
+struct force * restrict fhf;
+real * restrict fhf1, * restrict fhf2, * restrict fhf3;
 
 struct grain {
-  double x1, x2, x3;
-  double v1, v2, v3;
-  double a1, a2, a3;
-  double r, m, mw, It;
-  double p;  // Pressure on grain
-  double s;  // shear
-  double f1, f2;  // force
-  double ifm, fm;  // friction mobility
-  double fr, ifr;  // frictional energy wall and Internal
-  double M11, M12, M21, M22;  // Moments M11, M12, M21, M22
-  double ice, slip,
+  real x1, x2, x3;
+  real v1, v2, v3;
+  real a1, a2, a3;
+  real r, m, mw, It;
+  real p;  // Pressure on grain
+  real s;  // shear
+  real f1, f2;  // force
+  real ifm, fm;  // friction mobility
+  real fr, ifr;  // frictional energy wall and Internal
+  real M11, M12, M21, M22;  // Moments M11, M12, M21, M22
+  real ice, slip,
       rw;  // Inelastic Collisional Energy, slip, & Rotational work
   int z;   // number of contacts
   int zz;  // number of contacts sans the Walls
 };
-struct grain g[nbgrainsMax];
-static double rMax, rMin;
+struct grain * restrict g;
 
 // Wall
-static double Mby = 0.;
-static double Mgx = 0.;
-static double Mhy = 0.;
-static double Mdx = 0.;
+static real Mby = 0.;
+static real Mgx = 0.;
+static real Mhy = 0.;
+static real Mdx = 0.;
 
-
-double aff_transx = 2e-1, aff_transy = 5e-0, aff_zoom = 150.;
-double ecart_ini = 1.0;
+real ecart_ini = 1.0;
 
 // ***************************************************************************
 // *   utilities
 // ***************************************************************************
-
-double Min(double x, double y) {
-  if (x < y)
-    return x;
-  else
-    return y;
-}
-
-double Max(double x, double y) {
-  if (x < y)
-    return y;
-  else
-    return x;
-}
-
-double Maxt(double x, double y) {
+real Maxt(real x, real y) {
   if (x < y)
     return 0.;
   else
@@ -215,20 +219,16 @@ double Maxt(double x, double y) {
 }
 
 //---------------------------------------------------
-void stat() {
-  int i;
-
-  rMax = g[0].r;
-  rMin = g[0].r;
-
-  for (i = 0; i <= nbgrains - 1; i++) {
-    rMax = Max(rMax, g[i].r);
-    rMin = Min(rMin, g[i].r);
+real minimum_grain_radius(int nbgrains, struct grain g[nbgrains]) {
+  real rMin = g[0].r;
+  for (int i = 1; i <= nbgrains - 1; i++) {
+    rMin = fmin(rMin, g[i].r);
   }
+  return rMin;
 }
 //----------------------------------------------------
-void swap(double* a, double* b) {
-  double tmp;
+void swap(real* a, real* b) {
+  real tmp;
   tmp = *a;
   *a = *b;
   *b = tmp;
@@ -237,52 +237,95 @@ void swap(double* a, double* b) {
 // *******************************************************************
 // *   Output files                                             *
 // *******************************************************************
-void write_grains() {
-  int x, y, i;
-  char filename[25];
-  double pasxyz;
-  FILE* outfile;
-  sprintf(filename, "LBM_grains%.6i.vtk", nFile);
+void write_vtk(int nx, int ny, real f[nx][ny][Q], int nbgrains, struct grain g[nbgrains]) {
+  char filename[255];
+  sprintf(filename, "lbm-dem_%.6i", nFile);
 
-  pasxyz = 1. / lx;
-  outfile = fopen(filename, "w");
-  fprintf(outfile, "# vtk DataFile Version 2.0\n");
-  fprintf(outfile, "Domain LB+LINK\n");
-  fprintf(outfile, "ASCII\n");
-  fprintf(outfile, "DATASET RECTILINEAR_GRID\n");
-  fprintf(outfile, "DIMENSIONS %d %d 1\n", lx, ly);
-  fprintf(outfile, "X_COORDINATES %d float\n", lx);
-  for (i = 0; i <= lx - 1; i++) {
-    fprintf(outfile, "%e ", (float)i * pasxyz);
-  }
-  fprintf(outfile, "\n");
-  fprintf(outfile, "Y_COORDINATES %d float\n", ly);
-  for (i = 0; i <= ly - 1; i++) {
-    fprintf(outfile, "%e ", (float)i * pasxyz);
-  }
-  fprintf(outfile, "\n");
-  fprintf(outfile, "Z_COORDINATES 1 float\n");
-  fprintf(outfile, "0\n");
+  int dims[] = {nx, ny, 1};
+  float *xs = malloc(sizeof(float)*nx);
+  float *ys = malloc(sizeof(float)*ny);
+  float *zs = malloc(sizeof(float)*1);
+  float pasxyz = 1. / nx;
+  for (int i = 0; i < nx; i++) xs[i] = i*pasxyz;
+  for (int i = 0; i < ny; i++) ys[i] = i*pasxyz;
+  *zs = 0;
 
-  // For LB
-  fprintf(outfile, "POINT_DATA %d\n", lx * ly);
-  fprintf(outfile, "SCALARS Grains float 1\n");
-  fprintf(outfile, "LOOKUP_TABLE default\n");
+  int nvars = 5;
+  int vardims[] = {1, 3, 3, 1, 3};
+  int centering[] = {1, 1, 1, 1, 1};
 
-  for (y = 0; y < ly; y++) {
-    for (x = 0; x < lx; x++) {
-      fprintf(outfile, "%.4lf\n", grains[x][y]);
+  char *varnames[] = {
+    "grain_pressure", "grain_velocity", "grain_acceleration",
+    "fluid_pressure", "fluid_velocity" };
+
+  float (*grain_pressure    )[nx]    = malloc(sizeof(float)*nx*ny);
+  float (*grain_velocity    )[nx][3] = malloc(sizeof(float)*nx*ny*3);
+  float (*grain_acceleration)[nx][3] = malloc(sizeof(float)*nx*ny*3);
+  float (*fluid_pressure    )[nx]    = malloc(sizeof(float)*nx*ny);
+  float (*fluid_velocity    )[nx][3] = malloc(sizeof(float)*nx*ny*3);
+
+  float *vars[] = {
+    (float*)grain_pressure, (float*)grain_velocity, (float*)grain_acceleration,
+    (float*)fluid_pressure, (float*)fluid_velocity };
+
+  for (int y = 0; y < ny; y++) {
+    for (int x = 0; x < nx; x++) {
+      int i = obst[x][y];
+      if (i >= 0 && i < nbgrains) {
+        grain_pressure[y][x] = g[i].p;
+        grain_velocity[y][x][0] = g[i].v1;
+        grain_velocity[y][x][1] = g[i].v2;
+        grain_velocity[y][x][2] = 0.0;
+        grain_acceleration[y][x][0] = g[i].a1;
+        grain_acceleration[y][x][1] = g[i].a2;
+        grain_acceleration[y][x][2] = 0.0;
+
+        fluid_pressure[y][x] = 0.0;
+        fluid_velocity[y][x][0] = 0.0;
+        fluid_velocity[y][x][1] = 0.0;
+        fluid_velocity[y][x][2] = 0.0;
+
+      } else {
+        grain_pressure[y][x] = -1;
+        grain_velocity[y][x][0] = 0.0;
+        grain_velocity[y][x][1] = 0.0;
+        grain_velocity[y][x][2] = 0.0;
+        grain_acceleration[y][x][0] = 0.0;
+        grain_acceleration[y][x][1] = 0.0;
+        grain_acceleration[y][x][2] = 0.0;
+
+        fluid_pressure[y][x] = 0.0;
+        fluid_velocity[y][x][0] = 0.0;
+        fluid_velocity[y][x][1] = 0.0;
+        fluid_velocity[y][x][2] = 0.0;
+
+        for (int j = 0; j < Q; ++j) {
+          fluid_pressure[y][x] += f[x][y][j];
+          fluid_velocity[y][x][0] += f[x][y][j] * ex[j];
+          fluid_velocity[y][x][1] += f[x][y][j] * ey[j];
+        }
+        fluid_pressure[y][x] = (1. / 3.) * rho_moy * (fluid_pressure[y][x] - 1.);
+      }
     }
   }
 
-  fclose(outfile);
+  write_rectilinear_mesh(filename, 1, dims, xs, ys, zs, nvars, vardims, centering, varnames, vars);
+
+  free(xs);
+  free(ys);
+  free(zs);
+  free(grain_pressure);
+  free(grain_velocity);
+  free(grain_acceleration);
+  free(fluid_velocity);
+  free(fluid_pressure);
 }
 
 void write_DEM() {
   int i;
   char filename[25];
-  double N0, N1, N2, N3, N4, N5;  // Percentage of particles in contact
-  double xgrainmax;
+  real N0, N1, N2, N3, N4, N5;  // Percentage of particles in contact
+  real xgrainmax;
   FILE* outfile;
   // Output file
   // sprintf(filename,"DEM_Grains%.6i.dat",nFile);
@@ -380,19 +423,19 @@ void write_DEM() {
 
 void write_forces() {
   int i, j;
-  double dn;
+  real dn;
   char nomfile[25];
   FILE* outfile1;
   // Ouverture du fichier
   // sprintf(filename,"DEM_Grains%.6i.dat",nFile);
   sprintf(nomfile, "DEM%.6i.ps", nFile);
   outfile1 = fopen(nomfile, "w");
-  float margin = 10 * g[0].r, hrx1 = 3000, hry2 = 500;
+  real margin = 10 * g[0].r, hrx1 = 4000, hry2 = 1000;
   fprintf(outfile1, "%%!PS-Adobe-3.0 EPSF-3.0 \n");
-  fprintf(outfile1, "%%BoundingBox: %f %f %f %f \n", -margin, -margin,
+  fprintf(outfile1, "%%%BoundingBox: %f %f %f %f \n", -margin, -margin,
           hrx1 + margin, hry2 + margin);
-  fprintf(outfile1, "%%Creator: Krishna Kumar \n");
-  fprintf(outfile1, "%%Title: DEM Grains & Forces \n");
+  fprintf(outfile1, "%%%Creator: Krishna Kumar \n");
+  fprintf(outfile1, "%%%Title: DEM Grains & Forces \n");
   fprintf(outfile1, "0.1 setlinewidth 0.0 setgray \n");
   for (i = 0; i <= nbgrains; i++)
     fprintf(outfile1,
@@ -407,7 +450,7 @@ void write_forces() {
            g[i].r - g[j].r;
       if (dn < -1e-10 && i != j) {
         //  printf("dn for i %i and j %i are: %le \n",i,j,dn);
-        fprintf(outfile1, "%le setlinewidth \n 0.0 setgray \n", c1[i][j].fn);
+        fprintf(outfile1, "%le setlinewidth \n 0.0 setgray \n", 1.); // c1[i][j].fn);
         fprintf(outfile1, "1 setlinecap \n newpath \n");
         fprintf(outfile1, "%le %le moveto \n %le %le lineto\n", g[i].x1 * 10000,
                 g[i].x2 * 10000, g[j].x1 * 10000, g[j].x2 * 10000);
@@ -423,8 +466,8 @@ void write_forces() {
 void write_densities() {
 
   int x, y, i;
-  double pasxyz;
-  double P, u_x, u_y;
+  real pasxyz;
+  real P, u_x, u_y;
 
   char filename[25];
   char filename_press[25];
@@ -514,7 +557,7 @@ void temp_sample() {
   j = 0;
   k = 0;
   for (i = 0; i < nbgrains; ++i) {
-    g[i].r = r;  //*(float)(i+1)/nbgrains;
+    g[i].r = r;  //*(real)(i+1)/nbgrains;
     g[i].m = rhoS * pi * g[i].r * g[i].r;
 #ifdef _FLUIDE_
     g[i].mw = rhoW * pi * g[i].r * g[i].r;
@@ -534,7 +577,7 @@ void temp_sample() {
     g[i].a2 = 0.;
     g[i].a3 = 0.;
     // if(j<=4) {j++;} else {j=0;k++;};
-    if (j < nbgrains_bas - 1 && k == 0) {
+    if (j < 0 && k == 0) {
       j++;
     } else {
       if (j <= 13) {
@@ -547,20 +590,20 @@ void temp_sample() {
   }
 }
 
-void sample() {
-  int i;
-  FILE* sample_file;
+struct grain* read_sample(char * filename_sample) {
+  FILE *sample_file = fopen(filename_sample, "r");
+
   char com[256];
-  double L0, H0, MassGrain, xMax, xMin, yMax, yMin;
-
-  sample_file = fopen(filename_sample, "r");
-
   fgets(com, 256, sample_file);
   printf("%s\n", com);
   fscanf(sample_file, "%d\n", &nbgrains);
+
+  struct grain *g = malloc(sizeof(struct grain)*nbgrains);
+
   printf("Nb grains %d\n", nbgrains);
-  for (i = 0; i < nbgrains; ++i) {
-    fscanf(sample_file, "%le %le %le;\n", &g[i].r, &g[i].x1, &g[i].x2);
+  for (int i = 0; i < nbgrains; ++i) {
+    fscanf(sample_file, FLOAT_FORMAT" "FLOAT_FORMAT" "FLOAT_FORMAT";\n",
+           &g[i].r, &g[i].x1, &g[i].x2);
     // printf("%le %le %le\n",g[i].r,g[i].x1,g[i].x2);
     g[i].r = g[i].r * r;
     g[i].m = rhoS * pi * g[i].r * g[i].r;
@@ -575,22 +618,25 @@ void sample() {
     g[i].a2 = 0.;
     g[i].a3 = 0.;
   }
+  fclose(sample_file);
+  return g;
+}
+void check_sample(int nbgrains, struct grain g[nbgrains]) {
+  real xMax = g[0].x1;
+  real xMin = g[0].x1;
+  real yMax = g[0].x2;
+  real yMin = g[0].x2;
+  real MassGrain = 0.;
 
-  xMax = g[0].x1;
-  xMin = g[0].x1;
-  yMax = g[0].x2;
-  yMin = g[0].x2;
-  MassGrain = 0.;
-
-  for (i = 0; i < nbgrains; ++i) {
+  for (int i = 0; i < nbgrains; ++i) {
     MassGrain += g[i].m;
-    xMax = Max(xMax, g[i].x1 + g[i].r);
-    xMin = Min(xMin, g[i].x1 - g[i].r);
-    yMax = Max(yMax, g[i].x2 + g[i].r);
-    yMin = Min(yMin, g[i].x2 - g[i].r);
+    xMax = fmax(xMax, g[i].x1 + g[i].r);
+    xMin = fmin(xMin, g[i].x1 - g[i].r);
+    yMax = fmax(yMax, g[i].x2 + g[i].r);
+    yMin = fmin(yMin, g[i].x2 - g[i].r);
   }
-  L0 = xMax - xMin;
-  H0 = yMax - yMin;
+  real L0 = xMax - xMin;
+  real H0 = yMax - yMin;
   printf("L0=%le H0=%le Mass of Grains=%le Phi=%le\n", L0, H0, MassGrain,
          MassGrain / (rhoS * (L0 * H0)));
 }
@@ -601,30 +647,25 @@ void sample() {
 void init_obst() {
   int x, y, i, xi, yi, xf, yf;
   // c.d.g. sphere
-  //  double xc,yc;
-  double dist2, r2, R2, xc, yc, rbl0;
-  //	l2=lx*lx;
-  //#pragma omp parallel for
-  for (y = 1; y < ly - 1; y++) {
-    for (x = 1; x < lx - 1; x++) {
+  //  real xc,yc;
+  real dist2, r2, R2, xc, yc, rbl0;
+
+  for (x = 1; x < lx - 1; x++) {
+    for (y = 1; y < ly - 1; y++) {
       obst[x][y] = -1;
-      grains[x][y] = -1;  // JYD
     }
   }
 
-  //#pragma omp parallel for
   for (x = 0; x < lx; x++) {
     obst[x][0] = obst[x][ly - 1] = nbgrains;
     act[x][0] = act[x][ly - 1] = 0;
   }
 
-  //#pragma omp parallel for
   for (y = 1; y < ly - 1; y++) {
     obst[0][y] = obst[lx - 1][y] = nbgrains;
     act[0][y] = act[lx - 1][y] = 0;
   }
 
-#pragma omp parallel for
   for (i = 0; i < nbgrains; i++) {
     xc = (g[i].x1 - Mgx) / dx;
     yc = (g[i].x2 - Mby) / dx;
@@ -642,18 +683,12 @@ void init_obst() {
     if (yi < 1) yi = 1;
     if (yf >= ly - 1) yf = ly - 2;
 
-
-
-    for (y = yi; y <= yf; y++) {
-      for (x = xi; x <= xf; x++) {
+    for (x = xi; x <= xf; x++) {
+      for (y = yi; y <= yf; y++) {
         dist2 = (x - xc) * (x - xc) + (y - yc) * (y - yc);
         if (dist2 <= R2) {
-          grains[x][y] = g[i].p;
           if (dist2 <= r2) obst[x][y] = i;
         }
-        // else {
-        //	grains[x][y]=-1;
-        //}
       }
     }
   }
@@ -662,21 +697,12 @@ void init_obst() {
 // *   Initialise density distribution function with equilibrium to zero density
 // *
 // *******************************************************************************************
-void init_density() {
-  int x, y, iLB;
-  // double u_squ,eu;
-  for (x = 0; x < lx; x++) {
-    for (y = 0; y < ly; y++) {
-      for (iLB = 0; iLB < Q; iLB++) {
+void init_density(int nx, int ny, real f[nx][ny][Q]) {
+  for (int x = 0; x < nx; x++) {
+    for (int y = 0; y < ny; y++) {
+      for (int iLB = 0; iLB < Q; iLB++) {
         f[x][y][iLB] = w[iLB];
-      }  //*rho_moy; } sous hyp. rho=1
-         /*		u_squ=u_inlet*u_inlet;
-          for (i=0; i<Q;i++)
-          {
-          eu=ex[i]*u_inlet;
-          f[x][y][i]=w[i]*rho_moy*(1.+3*eu+4.5*eu*eu-1.5*u_squ);
-          }
-          */
+      }
     }
   }
 }
@@ -686,12 +712,13 @@ void init_density() {
 // *******************************************************************
 struct force force_grains(long i, long j) {
   //   distance normale
-  double dn, xOiOj, yOiOj, OiOj;
-  double xn, yn;
-  double vn, vxOiOj, vyOiOj, vt;
-  double ftest;
+  real dn, xOiOj, yOiOj, OiOj;
+  real xn, yn;
+  real vn, vxOiOj, vyOiOj, vt;
+  real ftest;
   struct force f;
-
+  double fn, ft;
+  
   // distance relative
   xOiOj = g[i].x1 - g[j].x1;
   yOiOj = g[i].x2 - g[j].x2;
@@ -715,39 +742,39 @@ struct force force_grains(long i, long j) {
     vt = -vxOiOj * yn + vyOiOj * xn - g[i].v3 * g[i].r - g[j].v3 * g[j].r;
 
     // calculate normal force
-    c1[i][j].fn = -kg * dn - nug * vn;
+    fn = -kg * dn - nug * vn;
 
-    if (c1[i][j].fn < 0) c1[i][j].fn = 0.0;
-    c1[i][j].ft = c1[i][j].ft - kt * vt * dt;
-    ftest = mu * c1[i][j].fn;
-    if (fabs(c1[i][j].ft) > ftest) {
-      if (c1[i][j].ft < 0.0)
-        c1[i][j].ft = ftest;
+    if (fn < 0) fn = 0.0;
+    ft = - kt * vt * dt;
+    ftest = mu * fn;
+    if (fabs(ft) > ftest) {
+      if (ft < 0.0)
+        ft = ftest;
       else
-        c1[i][j].ft = -ftest;
+        ft = -ftest;
     }
-    f.f1 = c1[i][j].fn * xn - c1[i][j].ft * yn;
-    f.f2 = c1[i][j].fn * yn + c1[i][j].ft * xn;
-    f.f3 = -Maxt(c1[i][j].ft * g[i].r, c1[i][j].fn * murf * g[i].r * g[j].r);
+    f.f1 = fn * xn - ft * yn;
+    f.f2 = fn * yn + ft * xn;
+    f.f3 = -Maxt(ft * g[i].r, fn * murf * g[i].r * g[j].r);
 
-    g[i].p += c1[i][j].fn;
-    g[j].p += c1[i][j].fn;
+    g[i].p += fn;
+    g[j].p += fn;
     g[i].f1 += f.f1;
     g[i].f2 += f.f2;
-    g[i].s += c1[i][j].ft;
-    g[j].s += c1[i][j].ft;
+    g[i].s += ft;
+    g[j].s += ft;
     g[i].slip +=
-        fabs(c1[i][j].ft) * (fabs(vt * dt) + (fabs(c1[i][j].ft - pft)) / kt);
-    pft = c1[i][j].ft;
+        fabs(ft) * (fabs(vt * dt) + (fabs(ft - pft)) / kt);
+    pft = ft;
     g[i].rw += fabs(f.f3) * (fabs(g[i].v3 * dt) + (fabs(f.f3 - pff)) / kt);
     pff = f.f3;
     g[i].z += 1;
     g[i].zz += 1;
     g[i].ice += ic;
-    if (c1[i][j].fn == 0)
+    if (fn == 0)
       g[i].ifm = 0;
     else
-      g[i].ifm += fabs(c1[i][j].ft / (mu * c1[i][j].fn));
+      g[i].ifm += fabs(ft / (mu * fn));
 
     // Stress computations
     g[i].M11 += f.f1 * xOiOj;
@@ -763,28 +790,29 @@ struct force force_grains(long i, long j) {
 // *   Calculation of forces between the grains and Walls            *
 // *******************************************************************
 
-struct force force_WallB(long i, double dn) {
-  double vn, vt, ftest;
+struct force force_WallB(long i, real dn) {
+  real vn, vt, ftest;
   struct force f;
+  real fn, ft;
   vn = g[i].v2;
   vt = g[i].v1;
-  c2[i].fn = -km * dn - num * vn;
-  if (c2[i].fn < 0) c2[i].fn = 0.;
-  c2[i].ft += ktm * vt;  //*dt; //Krishna
-  ftest = mumb * c2[i].fn;
-  if (fabs(c2[i].ft) > ftest) {
-    if (c2[i].ft < 0.0)
-      c2[i].ft = ftest;
+  fn = -km * dn - num * vn;
+  if (fn < 0) fn = 0.;
+  ft = ktm * vt;  //*dt; //Krishna
+  ftest = mumb * fn;
+  if (fabs(ft) > ftest) {
+    if (ft < 0.0)
+      ft = ftest;
     else
-      c2[i].ft = -ftest;
+      ft = -ftest;
   }
 
-  f.f1 = c2[i].ft;
-  f.f2 = c2[i].fn;
-  f.f3 = -(c2[i].ft * g[i].r * murf);
+  f.f1 = ft;
+  f.f2 = fn;
+  f.f3 = -(ft * g[i].r * murf);
 
-  g[i].p += c2[i].fn;
-  g[i].s += c2[i].ft;
+  g[i].p += fn;
+  g[i].s += ft;
   g[i].f1 += f.f1;
   g[i].z += 1;
   // Stress computations
@@ -794,13 +822,13 @@ struct force force_WallB(long i, double dn) {
   g[i].M22 += f.f2 * dt;
 
   g[i].rw += fabs(f.f3) * (fabs(g[i].v3 * dt) + (fabs(f.f3 - pff)) / kt);
-  g[i].fr += fabs(c2[i].ft) * (fabs(vt * dt) + (fabs(c2[i].ft - pft)) / kt);
+  g[i].fr += fabs(ft) * (fabs(vt * dt) + (fabs(ft - pft)) / kt);
   pff = f.f3;
-  pft = c2[i].ft;
+  pft = ft;
   return f;
 }
-struct force force_WallT(long i, double dn) {
-  double vn, vt, fn, ft, ftmax;
+struct force force_WallT(long i, real dn) {
+  real vn, vt, fn, ft, ftmax;
   struct force f;
   vn = g[i].v2;
   fn = km * dn - num * vn;
@@ -841,8 +869,8 @@ struct force force_WallT(long i, double dn) {
   //	pff=f.f3;pft=ft;
   return f;
 }
-struct force force_WallL(long i, double dn) {
-  double vn, fn, vt, ft;
+struct force force_WallL(long i, real dn) {
+  real vn, fn, vt, ft;
   struct force f;
   vn = g[i].v1;
   fn = -km * dn + num * vn;
@@ -876,8 +904,8 @@ struct force force_WallL(long i, double dn) {
   return f;
 }
 
-struct force force_WallR(long i, double dn) {
-  double vn, fn, vt, ft;
+struct force force_WallR(long i, real dn) {
+  real vn, fn, vt, ft;
   struct force f;
   vn = g[i].v1;
   fn = km * dn - num * vn;
@@ -920,36 +948,20 @@ struct force force_WallR(long i, double dn) {
 // to fluid   *
 // *******************************************************************************************
 void reinit_obst_density() {
-  int x, y, iLB;
-  double u_squ, eu;
-
-  for (x = 1; x < lx - 1; x++) {
-    // #pragma omp parallel for
-    for (y = 1; y < ly - 1; y++) {
-      if (obst[x][y] != -1) { 
+  for (int x = 1; x < lx - 1; x++) {
+    for (int y = 1; y < ly - 1; y++) {
+      int i = obst[x][y];
+      if (i != -1) {
        // Usqu: the standard (^2) the speed of the node from the portion
        // solid to the fluid portion
-        u_squ = ((g[obst[x][y]].v1 -
-                  (y * dx + Mby - g[obst[x][y]].x2) * g[obst[x][y]].v3) *
-                     (g[obst[x][y]].v1 -
-                      (y * dx + Mby - g[obst[x][y]].x2) * g[obst[x][y]].v3) +
-                 (g[obst[x][y]].v2 +
-                  (x * dx + Mgx - g[obst[x][y]].x1) * g[obst[x][y]].v3) *
-                     (g[obst[x][y]].v2 +
-                      (x * dx + Mgx - g[obst[x][y]].x1) * g[obst[x][y]].v3)) /
-                (c * c);
-        for (iLB = 0; iLB < Q; iLB++) {
+        real u_squ = ((g[i].v1 - (y * dx + Mby - g[i].x2) * g[i].v3) * (g[i].v1 - (y * dx + Mby - g[i].x2) * g[i].v3)
+                     +(g[i].v2 + (x * dx + Mgx - g[i].x1) * g[i].v3) * (g[i].v2 + (x * dx + Mgx - g[i].x1) * g[i].v3)) / (c * c);
+        for (int iLB = 0; iLB < Q; iLB++) {
           // eu : e.u in formula feq
 
-          eu = (ex[iLB] *
-                    (g[obst[x][y]].v1 -
-                     (y * dx + Mby - g[obst[x][y]].x2) * g[obst[x][y]].v3) +
-                ey[iLB] *
-                    (g[obst[x][y]].v2 +
-                     (x * dx + Mgx - g[obst[x][y]].x1) * g[obst[x][y]].v3)) /
-               c;
-          f[x][y][iLB] =
-              w[iLB] * (1. + 3 * eu + 4.5 * eu * eu - 1.5 * u_squ);  //*rho_moy;
+          real eu = (ex[iLB] * (g[i].v1 - (y * dx + Mby - g[i].x2) * g[i].v3) +
+                     ey[iLB] * (g[i].v2 + (x * dx + Mgx - g[i].x1) * g[i].v3)) / c;
+          f[x][y][iLB] = w[iLB] * (1. + 3 * eu + 4.5 * eu * eu - 1.5 * u_squ);  //*rho_moy;
         }
       }
     }
@@ -962,23 +974,17 @@ void reinit_obst_density() {
 void obst_construction() {
   int x, y, xp, next_x, next_y, i, iLB, xi, yi, xf, yf;
   // c.d.g. sphere
-  //  double xc,yc;
-  double dist2, aa, bb, cc, r2, xc, yc, R2, rbl0;
-//	l2=lx*lx;
-#pragma omp parallel for
-  for (y = 1; y < ly - 1; y++) {
-    //	    #pragma omp parallel for
-    for (x = 1; x < lx - 1; x++) {
+  //  real xc,yc;
+  real dist2, aa, bb, cc, r2, xc, yc, R2, rbl0;
+  for (x = 1; x < lx - 1; x++) {
+    for (y = 1; y < ly - 1; y++) {
       obst[x][y] = -1;
-      grains[x][y] = -1;  // JYD
       act[x][y] = 1;
       for (iLB = 1; iLB < Q; iLB++) {
         delta[x][y][iLB] = 0;
       }
     }
   }
-//	#pragma acc kernels
-#pragma omp parallel for
   for (i = 0; i < nbgrains; i++) {
     xc = (g[i].x1 - Mgx) / dx;
     yc = (g[i].x2 - Mby) / dx;
@@ -995,13 +1001,10 @@ void obst_construction() {
     yf = (int)(yc + rbl0);
     if (yi < 1) yi = 1;
     if (yf >= ly - 1) yf = ly - 2;
-    //		#pragma loop for independent
     for (y = yi; y <= yf; y++) {
       for (x = xi; x <= xf; x++) {
         dist2 = (x - xc) * (x - xc) + (y - yc) * (y - yc);
         if (dist2 <= R2) {
-          grains[x][y] = g[i].p;
-          // printf("%le\n",grains[x][y]);
           if (dist2 <= r2) obst[x][y] = i;
         }
         // if(dist2<=r2) obst[x][y]=i;
@@ -1010,7 +1013,6 @@ void obst_construction() {
 
     // *   Obstacle in inteaction with fluid (active obstacles)
 
-    //	#pragma loop for independent
     for (y = yi; y <= yf; y++) {
       for (x = xi; x <= xf; x++) {
         if (obst[x][y] == i) {
@@ -1047,77 +1049,58 @@ void obst_construction() {
 // ************************************************************************************************
 
 void collision_streaming() {
-  int x, y, iLB, next_x, next_y, next_xx, next_yy;
-  double rho, e, eps, j_x, j_y, q_x, q_y, p_xx, p_xy, eO, epsO, q_xO, q_yO,
-      p_xxO, p_xyO, j_x2, j_y2;
-  // double s2=1.944,s3=1.944,s5=1.944,s7=1.944,s8=1.944,s9=1.944;
   const int half = (Q - 1) / 2;
-  double a = 1. / 36;
+  const real a = 1. / 36;
 
 // Post-collision part computation
 // (Yu-Mei-Luo-Shyy)
 #pragma acc kernels
-  for (x = 1; x < lx - 1; x++) {
-    for (y = 1; y < ly - 1; y++) {
+  for (int x = 1; x < lx - 1; x++) {
+    for (int y = 1; y < ly - 1; y++) {
       if (obst[x][y] == -1) {
 
-        rho = f[x][y][0] + f[x][y][1] + f[x][y][2] + f[x][y][3] + f[x][y][4] +
-              f[x][y][5] + f[x][y][6] + f[x][y][7] + f[x][y][8];
+        real rho = f[x][y][0] + f[x][y][1] + f[x][y][2] + f[x][y][3] + f[x][y][4]
+                 + f[x][y][5] + f[x][y][6] + f[x][y][7] + f[x][y][8];
 
-        e = -4 * f[x][y][0] + 2 * f[x][y][1] - f[x][y][2] + 2 * f[x][y][3] -
-            f[x][y][4] + 2 * f[x][y][5] - f[x][y][6] + 2 * f[x][y][7] -
-            f[x][y][8];
-        eps = 4 * f[x][y][0] + f[x][y][1] - 2 * f[x][y][2] + f[x][y][3] -
-              2 * f[x][y][4] + f[x][y][5] - 2 * f[x][y][6] + f[x][y][7] -
-              2 * f[x][y][8];
-        j_x = f[x][y][5] + f[x][y][6] + f[x][y][7] - f[x][y][1] - f[x][y][2] -
-              f[x][y][3];
-        q_x = -f[x][y][1] + 2 * f[x][y][2] - f[x][y][3] + f[x][y][5] -
-              2 * f[x][y][6] + f[x][y][7];
-        j_y = f[x][y][1] + f[x][y][8] + f[x][y][7] - f[x][y][3] - f[x][y][4] -
-              f[x][y][5];
-        q_y = f[x][y][1] - f[x][y][3] + 2 * f[x][y][4] - f[x][y][5] +
-              f[x][y][7] - 2 * f[x][y][8];
-        p_xx = f[x][y][2] - f[x][y][4] + f[x][y][6] - f[x][y][8];
-        p_xy = -f[x][y][1] + f[x][y][3] - f[x][y][5] + f[x][y][7];
+        real e = -4 * f[x][y][0] + 2 * f[x][y][1] - f[x][y][2] + 2 * f[x][y][3] -
+          f[x][y][4] + 2 * f[x][y][5] - f[x][y][6] + 2 * f[x][y][7] - f[x][y][8];
 
-        j_x2 = j_x * j_x;
-        j_y2 = j_y * j_y;
+        real eps = 4 * f[x][y][0] + f[x][y][1] - 2 * f[x][y][2] + f[x][y][3] -
+          2 * f[x][y][4] + f[x][y][5] - 2 * f[x][y][6] + f[x][y][7] - 2 * f[x][y][8];
 
-        eO = e - s2 * (e + 2 * rho - 3 * (j_x2 + j_y2) / rho);
-        epsO = eps - s3 * (eps - rho + 3 * (j_x2 + j_y2) / rho);
-        q_xO = q_x - s5 * (q_x + j_x);
-        q_yO = q_y - s7 * (q_y + j_y);
-        p_xxO = p_xx - s8 * (p_xx - (j_x2 - j_y2) / rho);
-        p_xyO = p_xy - s9 * (p_xy - j_x * j_y / rho);
+        real j_x = f[x][y][5] + f[x][y][6] + f[x][y][7] - f[x][y][1] - f[x][y][2] - f[x][y][3];
+        real q_x = -f[x][y][1] + 2 * f[x][y][2] - f[x][y][3] + f[x][y][5] - 2 * f[x][y][6] + f[x][y][7];
+        real j_y = f[x][y][1] + f[x][y][8] + f[x][y][7] - f[x][y][3] - f[x][y][4] - f[x][y][5];
+        real q_y = f[x][y][1] - f[x][y][3] + 2 * f[x][y][4] - f[x][y][5] + f[x][y][7] - 2 * f[x][y][8];
+        real p_xx = f[x][y][2] - f[x][y][4] + f[x][y][6] - f[x][y][8];
+        real p_xy = -f[x][y][1] + f[x][y][3] - f[x][y][5] + f[x][y][7];
 
-        //! à revoir. Consulter : ../général/Yu-Mei-Luo-Shyy
+        real j_x2 = j_x * j_x;
+        real j_y2 = j_y * j_y;
 
-        f[x][y][0] = 4 * a * (rho - eO + epsO);
-        f[x][y][1] = a * (4 * rho + 2 * eO + epsO - 6 * j_x - 3 * q_xO +
-                          6 * j_y + 3 * q_yO - 9 * p_xyO);
-        f[x][y][2] =
-            a * (4 * rho - eO - 2 * epsO - 6 * j_x + 6 * q_xO + 9 * p_xxO);
-        f[x][y][3] = a * (4 * rho + 2 * eO + epsO - 6 * j_x - 3 * q_xO -
-                          6 * j_y - 3 * q_yO + 9 * p_xyO);
-        f[x][y][4] =
-            a * (4 * rho - eO - 2 * epsO - 6 * j_y + 6 * q_yO - 9 * p_xxO);
-        f[x][y][5] = a * (4 * rho + 2 * eO + epsO + 6 * j_x + 3 * q_xO -
-                          6 * j_y - 3 * q_yO - 9 * p_xyO);
-        f[x][y][6] =
-            a * (4 * rho - eO - 2 * epsO + 6 * j_x - 6 * q_xO + 9 * p_xxO);
-        f[x][y][7] = a * (4 * rho + 2 * eO + epsO + 6 * j_x + 3 * q_xO +
-                          6 * j_y + 3 * q_yO + 9 * p_xyO);
-        f[x][y][8] =
-            a * (4 * rho - eO - 2 * epsO + 6 * j_y - 6 * q_yO - 9 * p_xxO);
+        real eO = e - s2 * (e + 2 * rho - 3 * (j_x2 + j_y2) / rho);
+        real epsO = eps - s3 * (eps - rho + 3 * (j_x2 + j_y2) / rho);
+        real q_xO = q_x - s5 * (q_x + j_x);
+        real q_yO = q_y - s7 * (q_y + j_y);
+        real p_xxO = p_xx - s8 * (p_xx - (j_x2 - j_y2) / rho);
+        real p_xyO = p_xy - s9 * (p_xy - j_x * j_y / rho);
+
+        f[x][y][0] = a * (4*rho - 4 * eO + 4 * epsO);
+        f[x][y][2] = a * (4*rho - eO - 2*epsO - 6*j_x + 6*q_xO + 9*p_xxO);
+        f[x][y][4] = a * (4*rho - eO - 2*epsO - 6*j_y + 6*q_yO - 9*p_xxO);
+        f[x][y][6] = a * (4*rho - eO - 2*epsO + 6*j_x - 6*q_xO + 9*p_xxO);
+        f[x][y][8] = a * (4*rho - eO - 2*epsO + 6*j_y - 6*q_yO - 9*p_xxO);
+        f[x][y][1] = a * (4*rho + 2*eO + epsO - 6*j_x - 3*q_xO + 6*j_y + 3*q_yO - 9*p_xyO);
+        f[x][y][3] = a * (4*rho + 2*eO + epsO - 6*j_x - 3*q_xO - 6*j_y - 3*q_yO + 9*p_xyO);
+        f[x][y][5] = a * (4*rho + 2*eO + epsO + 6*j_x + 3*q_xO - 6*j_y - 3*q_yO - 9*p_xyO);
+        f[x][y][7] = a * (4*rho + 2*eO + epsO + 6*j_x + 3*q_xO + 6*j_y + 3*q_yO + 9*p_xyO);
       }
     }
   }
 
   // To calculate the edges; see the book Lattice Boltzmann Modeling
   // Bounce back for y=0 & y=ly-1
-  //	#pragma omp parallel for
-  for (x = 1; x < lx - 1; x++) {
+  for (int x = 1; x < lx - 1; x++) {
     f[x][0][8] = f[x][1][4];
     f[x][0][7] = f[x + 1][1][3];  //;+uw_b/6;
     f[x][0][1] = f[x - 1][1][5];  //-uw_b/6;
@@ -1126,8 +1109,7 @@ void collision_streaming() {
     f[x][ly - 1][3] = f[x - 1][ly - 2][7];  //-uw_h/6;
     f[x][ly - 1][5] = f[x + 1][ly - 2][1];  //+uw_h/6;
   }
-  //#pragma omp parallel for
-  for (y = 1; y < ly - 1; y++) {
+  for (int y = 1; y < ly - 1; y++) {
     f[0][y][6] = f[1][y][2];
     f[0][y][7] = f[1][y + 1][3];  //;+uw_b/6;
     f[0][y][5] = f[1][y - 1][1];  //-uw_b/6;
@@ -1149,15 +1131,13 @@ void collision_streaming() {
   //  2: article of Klaus-Nils-Ulrich                //
   //  3: article of Yu-Mei-Luo-Shyy                  //
   /////////////////////////////////////////////////////////
-  //	#pragma acc kernels
-  //#pragma omp parallel for
-  for (x = 1; x < lx - 1; x++) {
-    for (y = 1; y < ly - 1; y++) {
-      if (obst[x][y] != -1 && act[x][y] == 1) {
-        for (iLB = 1; iLB <= half; iLB++) {
-          next_x = x + ex[iLB];  // if (next_x<0) next_x=lx-1; if (next_x>=lx)
-                                 // next_x=0;
-          next_y = y + ey[iLB];
+  for (int x = 1; x < lx - 1; x++) {
+    for (int y = 1; y < ly - 1; y++) {
+      int i = obst[x][y];
+      if (i != -1 && act[x][y] == 1) {
+        for (int iLB = 1; iLB <= half; iLB++) {
+          int next_x = x + ex[iLB];
+          int next_y = y + ey[iLB];
           if (obst[next_x][next_y] != -1)
             f[x][y][iLB] = w[iLB];
           else  //(obst[next_x][next_y]==-1)
@@ -1169,36 +1149,26 @@ void collision_streaming() {
                   (2 * delta[x][y][iLB] - 1) * f[next_x][next_y][iLB] /
                       (2 * delta[x][y][iLB]) +
                   3 * (w[iLB] / c) *
-                      (ex[iLB] * (g[obst[x][y]].v1 -
-                                  (y * dx + Mby - g[obst[x][y]].x2) *
-                                      g[obst[x][y]].v3) +
-                       ey[iLB] * (g[obst[x][y]].v2 +
-                                  (x * dx + Mgx - g[obst[x][y]].x1) *
-                                      g[obst[x][y]].v3)) /
+                      (ex[iLB] * (g[i].v1 - (y * dx + Mby - g[i].x2) * g[i].v3) +
+                       ey[iLB] * (g[i].v2 + (x * dx + Mgx - g[i].x1) * g[i].v3)) /
                       delta[x][y][iLB];
             }
             if (delta[x][y][iLB] > 0. && delta[x][y][iLB] < 0.5) {
-              next_xx = next_x + ex[iLB];  // if (next_xx<0) next_xx=lx-1; if
-                                           // (next_xx>=lx) next_xx=0;
-              next_yy = next_y + ey[iLB];
+              int next_xx = next_x + ex[iLB];
+              int next_yy = next_y + ey[iLB];
               f[x][y][iLB] =
                   2 * delta[x][y][iLB] * f[next_x][next_y][iLB + half] +
                   (1 - 2 * delta[x][y][iLB]) * f[next_xx][next_yy][iLB + half] +
                   6 * (w[iLB] / c) *
-                      (ex[iLB] * (g[obst[x][y]].v1 -
-                                  (y * dx + Mby - g[obst[x][y]].x2) *
-                                      g[obst[x][y]].v3) +
-                       ey[iLB] * (g[obst[x][y]].v2 +
-                                  (x * dx + Mgx - g[obst[x][y]].x1) *
-                                      g[obst[x][y]].v3));
+                      (ex[iLB] * (g[i].v1 - (y * dx + Mby - g[i].x2) * g[i].v3) +
+                       ey[iLB] * (g[i].v2 + (x * dx + Mgx - g[i].x1) * g[i].v3));
             }
           }
         }
 
-        for (iLB = 1 + half; iLB < Q; iLB++) {
-          next_x = x + ex[iLB];  // if (next_x<0) next_x=lx-1; if (next_x>=lx)
-                                 // next_x=0;
-          next_y = y + ey[iLB];
+        for (int iLB = 1 + half; iLB < Q; iLB++) {
+          int next_x = x + ex[iLB];
+          int next_y = y + ey[iLB];
           if (obst[next_x][next_y] != -1)
             f[x][y][iLB] = w[iLB];
 
@@ -1211,28 +1181,19 @@ void collision_streaming() {
                   (2 * delta[x][y][iLB] - 1) * f[next_x][next_y][iLB] /
                       (2 * delta[x][y][iLB]) +
                   3 * (w[iLB] / c) *
-                      (ex[iLB] * (g[obst[x][y]].v1 -
-                                  (y * dx + Mby - g[obst[x][y]].x2) *
-                                      g[obst[x][y]].v3) +
-                       ey[iLB] * (g[obst[x][y]].v2 +
-                                  (x * dx + Mgx - g[obst[x][y]].x1) *
-                                      g[obst[x][y]].v3)) /
+                      (ex[iLB] * (g[i].v1 - (y * dx + Mby - g[i].x2) * g[i].v3) +
+                       ey[iLB] * (g[i].v2 + (x * dx + Mgx - g[i].x1) * g[i].v3)) /
                       delta[x][y][iLB];
             }
             if (delta[x][y][iLB] > 0. && delta[x][y][iLB] < 0.5) {
-              next_xx = next_x + ex[iLB];  // if (next_xx<0) next_xx=lx-1; if
-                                           // (next_xx>=lx) next_xx=0;
-              next_yy = next_y + ey[iLB];
+              int next_xx = next_x + ex[iLB];
+              int next_yy = next_y + ey[iLB];
               f[x][y][iLB] =
                   2 * delta[x][y][iLB] * f[next_x][next_y][iLB - half] +
                   (1 - 2 * delta[x][y][iLB]) * f[next_xx][next_yy][iLB - half] +
                   6 * (w[iLB] / c) *
-                      (ex[iLB] * (g[obst[x][y]].v1 -
-                                  (y * dx + Mby - g[obst[x][y]].x2) *
-                                      g[obst[x][y]].v3) +
-                       ey[iLB] * (g[obst[x][y]].v2 +
-                                  (x * dx + Mgx - g[obst[x][y]].x1) *
-                                      g[obst[x][y]].v3));
+                      (ex[iLB] * (g[i].v1 - (y * dx + Mby - g[i].x2) * g[i].v3) +
+                       ey[iLB] * (g[i].v2 + (x * dx + Mgx - g[i].x1) * g[i].v3));
             }
           }
         }
@@ -1240,23 +1201,19 @@ void collision_streaming() {
     }
   }
 
-  for (x = 0; x < lx; x++) {
-    for (y = 0; y < ly; y++) {
-      for (iLB = 1; iLB <= half; iLB++) {
+  for (int x = 0; x < lx; x++) {
+    for (int y = 0; y < ly; y++) {
+      for (int iLB = 1; iLB <= half; iLB++) {
         swap(&f[x][y][iLB], &f[x][y][iLB + half]);
       }
     }
   }
 
-  //*****************************************************************************************
-
-  // Stream by swapping; moving the densities according to their velocities
-
-  for (x = 0; x < lx; x++) {
-    for (y = 0; y < ly; y++) {
-      for (iLB = 1; iLB <= half; iLB++) {
-        next_x = x + ex[iLB];  // if(next_x<0) next_x=lx-1;
-        next_y = y + ey[iLB];
+  for (int x = 0; x < lx; x++) {
+    for (int y = 0; y < ly; y++) {
+      for (int iLB = 1; iLB <= half; iLB++) {
+        int next_x = x + ex[iLB];  // if(next_x<0) next_x=lx-1;
+        int next_y = y + ey[iLB];
         if (next_x >= 0 && next_y >= 0 && next_x < lx && next_y < ly) {
           swap(&f[x][y][iLB + half], &f[next_x][next_y][iLB]);
         }
@@ -1271,8 +1228,7 @@ void collision_streaming() {
 // ************************************************************************************************
 void check_density() {
   int x, y, iLB;
-  double sum = 0;
-  //#pragma omp parallel for
+  real sum = 0;
   for (x = 0; x < lx; x++) {
     for (y = 0; y < ly; y++) {
       for (iLB = 0; iLB < Q; iLB++) {
@@ -1283,108 +1239,83 @@ void check_density() {
   printf("Iteration Number %ld, Total density in the system %f\n", nbsteps,
          sum);
 }
-// ****************************************************************************
-// *   Compute hydrodynamic forces                                          *
-// ****************************************************************************
-void forces_fluid() {
-  int next_x, next_y;
-  double fnx, fny;  //,sum_f1,sum_f2,sum_f3;
-  //	double sum2_f1, sum2_f2,sum2_f3;
-  int halfq;
-
-  //	sum_f1=sum_f2=sum_f3=0.0;
-  //	sum2_f1=sum2_f2=sum2_f3=0.0;
-
-  const int half = (Q - 1) / 2;
-
-#pragma omp parallel
-  {
-#pragma omp sections nowait
-    {
-#pragma omp section
-      {
-
-        reinit_obst_density();
-        obst_construction();
-        collision_streaming();
+void final_density() {
+  int x, y, iLB;
+  real sum = 0;
+  for (x = 0; x < lx; x++) {
+    for (y = 0; y < ly; y++) {
+      for (iLB = 0; iLB < Q; iLB++) {
+        sum = sum + f[x][y][iLB];
       }
     }
   }
+  fprintf(stderr, "final_density: %f\n", sum);
+}
 
-  if (nbsteps % stepConsole == 0) check_density();
+int min(int x, int y) {
+  return (x < y) ? x : y;
+}
+int max(int x, int y) {
+  return (x > y) ? x : y;
+}
 
-#pragma omp parallel private(next_x, next_y, fnx, fny, halfq)
-  {
-    int n_threads = omp_get_num_threads();
-    int tid = omp_get_thread_num();
-    
-    // Considering domain boundaries
-    int y_start = (tid == 0 ) ? 0 : ((ly/n_threads)*(tid+1))-1; 
-    int y_end = ( tid == (n_threads - 1) ) ? (ly-1) : ((ly/n_threads)*(tid+1));
+// ****************************************************************************
+// *   Compute hydrodynamic forces                                          *
+// ****************************************************************************
+void forces_fluid(int nx, int ny, real f[nx][ny][Q], int nbgrains, struct grain g[nbgrains]) {
+  const int half = (Q - 1) / 2;
 
-    // Index for Y-loop
-    int y_start_index = (tid == 0 ) ? 0 : ((ly/n_threads)*(tid+1)) ;
-    int y_end_index = ( tid == (n_threads - 1) ) ? ly : ((ly/n_threads)*(tid+1));
+  for (int i = 0; i < nbgrains; ++i) {
+    fhf1[i] = 0;
+    fhf2[i] = 0;
+    fhf3[i] = 0;
+  }
 
-    // Assign to each OpenMP a different GPU
-    int n_gpus = acc_get_num_devices( acc_device_nvidia );
-    if( n_gpus ){
-        acc_set_device_num( tid % n_gpus, acc_device_nvidia );
-    } else {
-        acc_set_device_type( acc_device_host );
-    }
+#pragma acc parallel copyout(fhf1[0:nbgrains], fhf2[0:nbgrains], fhf3[0:nbgrains]) \
+  copyin(obst[0:][0:], g[0:nbgrains], ey[0:], f[0:][y_start:y_end][0:], ex[0:]) {
+    for (int i = 0; i < nbgrains; ++i) {
+      const real xc = (g[i].x1 - Mgx) / dx;
+      const real yc = (g[i].x2 - Mby) / dx;
+      const real rbl0 = g[i].r / dx;
 
-#pragma acc parallel copyout(                         \
-    fhf1[0 : nbgrains],                              \
-         fhf2[0 : nbgrains], fhf3[0 : nbgrains])     \
-             copyin(obst[0 :][0 :], g[0 : nbgrains], \
-                                      ey[0 :], f[0: ][y_start : y_end][0 :], ex[0 :])
-  {
-    for (int i = 0; i < nbgrains; i++) {
-      fhf1[i] = fhf2[i] = fhf3[i] = 0.;
-      //#pragma acc loop
+      const int xi = max(xc - rbl0, 1);
+      const int xf = min(xc + rbl0, nx - 2);
+      const int yi = max(yc - rbl0, 1);
+      const int yf = min(yc + rbl0, ny - 2);
+
 #pragma acc for independent
-      for (int y = y_start_index; y < y_end_index; y++) {
-        //	  #pragma acc loop
+      for (int x = xi; x <= xf; ++x) {
 #pragma acc for independent
-        for (int x = 0; x < lx; x++) {
-          if (obst[x][y] == i)  //&& act[x][y][z]==1
-          {
+        for (int y = yi; y <= yf; ++y) {
+          if (i == obst[x][y]) {
 // Search fluid nodes neighbors
 #pragma acc for independent
-            for (int iLB = 1; iLB < Q; iLB++) {
-              next_x = x + ex[iLB];
-              next_y = y + ey[iLB];
+          for (int iLB = 1; iLB < Q; ++iLB) {
+            const int next_x = x + ex[iLB];
+            const int next_y = y + ey[iLB];
 
-              if (iLB <= half)
-                halfq = half;
-              else
-                halfq = -half;
-              if (obst[next_x][next_y] != i) {
-                fnx = (f[x][y][iLB + halfq] + f[next_x][next_y][iLB]) *
-                      ex[iLB + halfq];
-                fny = (f[x][y][iLB + halfq] + f[next_x][next_y][iLB]) *
-                      ey[iLB + halfq];
-                fhf1[i] = fhf1[i] + fnx;
-                fhf2[i] = fhf2[i] + fny;
-                fhf3[i] = fhf3[i] - fnx * (y - (g[i].x2 - Mby) / dx) +
-                          fny * (x - (g[i].x1 - Mgx) / dx);
-              }
+            if (obst[next_x][next_y] != i) {
+              const int halfq = (iLB <= half) ? half : -half;
+
+              const real fnx = (f[x][y][iLB + halfq] + f[next_x][next_y][iLB]) *
+                               ex[iLB + halfq];
+              const real fny = (f[x][y][iLB + halfq] + f[next_x][next_y][iLB]) *
+                               ey[iLB + halfq];
+              fhf1[i] = fhf1[i] + fnx;
+              fhf2[i] = fhf2[i] + fny;
+              fhf3[i] = fhf3[i] - fnx * (y - (g[i].x2 - Mby) / dx) +
+                        fny * (x - (g[i].x1 - Mgx) / dx);
             }
           }
         }
       }
-
-      fhf1[i] =
-          fhf1[i] * rho_moy * 9 * nu * nu / (dx * (tau - 0.5) * (tau - 0.5));
-      fhf2[i] =
-          fhf2[i] * rho_moy * 9 * nu * nu / (dx * (tau - 0.5) * (tau - 0.5));
-      fhf3[i] = fhf3[i] * dx * rho_moy * 9 * nu * nu /
-                (dx * (tau - 0.5) * (tau - 0.5));
     }
-  }
 
-  // END OMP REGION
+    for (int i = 0; i < nbgrains; ++i) {
+      fhf1[i] *= rho_moy * 9 * nu * nu / (dx * (tau - 0.5) * (tau - 0.5));
+      fhf2[i] *= rho_moy * 9 * nu * nu / (dx * (tau - 0.5) * (tau - 0.5));
+      fhf3[i] *= dx * rho_moy * 9 * nu * nu / (dx * (tau - 0.5) * (tau - 0.5));
+    }
   }
 }
 
@@ -1392,14 +1323,15 @@ void forces_fluid() {
 void acceleration_grains() {
   long i, j;
   int jdep;
-  double dn, ftest;
+  real dn, ftest;
+  real fn, ft;
   struct force fji; 
   if (nbsteps % stepFilm == 0 && start == 1) {  // Outfile MGPost
     //   distance normale
-    double xOiOj, yOiOj, OiOj;
-    double fn, xn, yn;
-    double vn, vxOiOj, vyOiOj;
-    double ft, ftmax, vt;
+    real xOiOj, yOiOj, OiOj;
+    real xn, yn;
+    real vn, vxOiOj, vyOiOj;
+    real vt;
 
     for (i = 0; i <= nbgrains - 1; i++) {
       g[i].a1 = fhf1[i];
@@ -1434,36 +1366,36 @@ void acceleration_grains() {
           vn = vxOiOj * xn + vyOiOj * yn;
           vt = -vxOiOj * yn + vyOiOj * xn - g[i].v3 * g[i].r -
                g[neighbours[j]].v3 * g[neighbours[j]].r;
-          c1[i][j].fn = -kg * dn - nug * vn;
-          if (c1[i][j].fn < 0) c1[i][j].fn = 0.0;
-          c1[i][j].ft = c1[i][j].ft - kt * vt * dt;
-          ftest = mu * c1[i][j].ft;
-          if (fabs(c1[i][j].ft) > ftest) {
-            if (c1[i][j].ft > 0.0)
-              c1[i][j].ft = ftest;
+          fn = -kg * dn - nug * vn;
+          if (fn < 0) fn = 0.0;
+          ft = kt * vt * dt;
+          ftest = mu * ft;
+          if (fabs(ft) > ftest) {
+            if (ft > 0.0)
+              ft = ftest;
             else
-              c1[i][j].ft = -ftest;
+              ft = -ftest;
           }
           //calculate the normal force
-          fji.f1 = c1[i][j].fn * xn - c1[i][j].ft * yn;
-          fji.f2 = c1[i][j].fn * yn + c1[i][j].ft * xn;
-          fji.f3 = -c1[i][j].ft * g[i].r * murf;
+          fji.f1 = fn * xn - ft * yn;
+          fji.f2 = fn * yn + ft * xn;
+          fji.f3 = -ft * g[i].r * murf;
 
-          g[i].p += c1[i][j].fn;
-          g[neighbours[j]].p += c1[i][j].fn;
-          g[i].s += c1[i][j].ft;
-          g[neighbours[j]].s += c1[i][j].ft;
-          g[i].slip += fabs(c1[i][j].ft) *
-                       (fabs(vt * dt) + (fabs(c1[i][j].ft - pft)) / kt);
-          g[neighbours[j]].slip += fabs(c1[i][j].ft) *
-                               (fabs(vt * dt) + (fabs(c1[i][j].ft - pft)) / kt);
+          g[i].p += fn;
+          g[neighbours[j]].p += fn;
+          g[i].s += ft;
+          g[neighbours[j]].s += ft;
+          g[i].slip += fabs(ft) *
+                       (fabs(vt * dt) + (fabs(ft - pft)) / kt);
+          g[neighbours[j]].slip += fabs(ft) *
+                               (fabs(vt * dt) + (fabs(ft - pft)) / kt);
           g[i].rw +=
               fabs(fji.f3) * (fabs(g[i].v3 * dt) + (fabs(fji.f3 - pff)) / kt);
           g[neighbours[j]].rw +=
               fabs(fji.f3) * (fabs(g[i].v3 * dt) + (fabs(fji.f3 - pff)) / kt);
           g[i].z += 1;
           pff = fji.f3;
-          pft = c1[i][j].ft;
+          pft = ft;
           // Stress computations
           g[i].M11 += fji.f1 * xOiOj;
           g[i].M12 += fji.f1 * yOiOj;
@@ -1574,8 +1506,8 @@ void acceleration_grains() {
 void initVerlet() {
   int i, j;
   int jneighbours;
-  double distx, disty;
-  //	double distVerlet=.1e-7;
+  real distx, disty;
+  //	real distVerlet=.1e-7;
   jneighbours = 0;
   for (i = 0; i < nbgrains; i++) {
     for (j = i + 1; j < nbgrains; j++) {
@@ -1603,13 +1535,13 @@ void VerletWall() {
   nNeighWallL = 0;
   nNeighWallt = 0;
   nNeighWallR = 0;
-  double dn;
-  // double distVerlet=.1e-7;
+  real dn;
+  // real distVerlet=.1e-7;
   // Verlet WallB
 
   if (nbsteps * dt < dtt) {
-    Mdx = 1.e-3 * lx;
-    Mhy = (1.e-3 * ly);
+    Mdx = 1.e-3 * lx / 10;
+    Mhy = (1.e-3 * ly / 10);
   } else {
     Mdx = 1.e-3 * lx;
     Mhy = 1.e-3 * ly;
@@ -1648,19 +1580,6 @@ void VerletWall() {
   }
 }
 
-//---------------------------------------------------
-void WallPosition() {
-
-  Mgx = 0.;
-  Mdx = 1.e-3 * lx / 10;
-  Mhy = 1.e-3 * ly / 10;
-  Mby = 0.;
-
-  //
-  aff_transx = (Mdx - Mgx) * 0.25;  //*aff_zoom;
-  aff_transy = (Mhy - Mby) * 0.5;   //*aff_zoom;
-
-}
 
 // *******************************************************************************************
 // *   writing obstacle arrays 
@@ -1714,8 +1633,8 @@ void obst_writing() {
 // ****************************************************************************
 void velocity_profile() {
   int x, y, i;
-  double u_y, d_loc;
-  double u_y1;
+  real u_y, d_loc;
+  real u_y1;
 
   char filename1[] = "yvel_vs_x.dat";
 
@@ -1775,20 +1694,30 @@ void renderScene(void) {
 
 // FORCES FLUIDES !!!
 #ifdef _FLUIDE_
-    if (nbsteps % npDEM == 0) forces_fluid();
+    if (nbsteps % npDEM == 0) {
+      reinit_obst_density();
+      obst_construction();
+      collision_streaming();
+
+      if (nbsteps % stepConsole == 0) check_density();
+
+      forces_fluid(lx, ly, f, nbgrains, g);
+    }
 #endif
 
-    if (nbsteps % UpdateVerlet == 0) initVerlet();
-    if (nbsteps % UpdateVerlet == 0) VerletWall();
+    if (nbsteps % UpdateVerlet == 0) {
+      initVerlet();
+      VerletWall();
+    }
 
     /*
-     for(i=0; i<=nbgrains_bas-1; i++) {
+       for(i=0; i<=nbgrains_bas-1; i++) {
        g[i].a1=0.;
        g[i].a2=0.;
        g[i].a3=0.;
-     }
-    */
-    for (i = nbgrains_bas - 1; i <= nbgrains - 1; i++) {
+       }
+       */
+    for (i = 0; i <= nbgrains - 1; i++) {
       g[i].p = 0;  // reset pressure
       g[i].s = 0.;
       g[i].ifm = 0;
@@ -1813,7 +1742,6 @@ void renderScene(void) {
 
     acceleration_grains();
 
-#pragma omp parallel for
     for (i = 0; i <= nbgrains - 1; i++) {
       //	g[i].p=g[i].p/(2.*M_PI*g[i].r); // pressure on grains
       g[i].v1 = g[i].v1 + dt * g[i].a1 / 2.;
@@ -1824,12 +1752,15 @@ void renderScene(void) {
   }
 
   if (nbsteps % stepFilm == 0 && start == 1) {
-    write_densities();
-    write_grains();
+#ifdef _FLUIDE_
+    write_vtk(lx, ly, f, nbgrains, g);
+#endif
     nFile++;
   }
-  if (nbsteps % stepStrob == 0 && start == 1) write_DEM();
-  if (nbsteps % (1 * stepStrob) == 0 && start == 1) write_forces();
+  if (nbsteps % stepStrob == 0 && start == 1) {
+    write_DEM();
+    write_forces();
+  }
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -1842,29 +1773,67 @@ int main(int argc, char** argv) {
 
   printf("2D LBM-DEM code\n");
   int i;
-  double dtmax;
+  real dtmax;
 
-  if (argc != 2) {    
-    printf("Error! Usage should be: ./lbmdem filename\n");
+  if (argc != 2) {
+    printf("usage: usage %s <filename>\n", argv[0]);
     exit(EXIT_FAILURE);
   }
 
   printf("Opening file : %s\n", argv[1]);
-  strcpy(filename_sample, argv[1]);
 
   c_squ = 1. / 3.;
-  sample();
-  stat();
-  init_density();
-  WallPosition();
+  g = read_sample(argv[1]);
+  check_sample(nbgrains, g);
+
+  f = malloc(sizeof(real)*lx*ly*Q); assert(f);
+
+  obst = malloc(sizeof(int)*lx*ly); assert(obst);
+  act = malloc(sizeof(int)*lx*ly); assert(act);
+  delta = malloc(sizeof(real)*lx*ly*Q); assert(delta);
+
+  rLB = malloc(sizeof(real)*nbgrains); assert(rLB);
+  cumul = malloc(sizeof(int)*nbgrains); assert(cumul);
+  neighbours = malloc(sizeof(int)*nbgrains*6); assert(neighbours);
+  neighbourWallB = malloc(sizeof(int)*nbgrains); assert(neighbourWallB);
+  neighbourWallR = malloc(sizeof(int)*nbgrains); assert(neighbourWallR);
+  neighbourWallL = malloc(sizeof(int)*nbgrains); assert(neighbourWallL);
+  neighbourWallT = malloc(sizeof(int)*nbgrains); assert(neighbourWallT);
+
+  memset(cumul, 0, sizeof(int)*nbgrains);
+  memset(neighbours, 0, sizeof(int)*nbgrains*6);
+  memset(neighbourWallB, 0, sizeof(int)*nbgrains);
+  memset(neighbourWallR, 0, sizeof(int)*nbgrains);
+  memset(neighbourWallL, 0, sizeof(int)*nbgrains);
+  memset(neighbourWallT, 0, sizeof(int)*nbgrains);
+
+  //  c1 = malloc(sizeof(struct contact)*nbgrainsMax*nbgrainsMax); assert(c1);
+  //  c2 = malloc(sizeof(struct contact)*nbgrains); assert(c2);
+
+  //  memset(c1, 0, sizeof(struct contact)*nbgrains*nbgrains);
+  //  memset(c2, 0, sizeof(struct contact)*nbgrains);
+
+  fhf = malloc(sizeof(struct force)*nbgrains); assert(fhf);
+  fhf1 = malloc(sizeof(real)*nbgrains); assert(fhf1);
+  fhf2 = malloc(sizeof(real)*nbgrains); assert(fhf2);
+  fhf3 = malloc(sizeof(real)*nbgrains); assert(fhf3);
+
+  init_density(lx, ly, f);
+
+  Mgx = 0.;
+  Mdx = 1.e-3 * lx / 10;
+  Mhy = 1.e-3 * ly / 10;
+  Mby = 0.;
+
   xG = -G * sin(angleG);
   yG = -G * cos(angleG);
 
-  dx = 0.5 * (Mdx - Mgx) / (lx - 1);
+  dx = (1./scale) * (Mdx - Mgx) / (lx - 1);
   printf("no space %le\n", dx);
 
   // Compute the time step for DEM
-  dtmax = (1 / iterDEM) * pi * sqrt(pi * rMin * rMin * rhoS / kg);
+  real rMin = minimum_grain_radius(nbgrains, g);
+  dtmax = (1 / iterDEM) * pi * rMin * sqrt(pi * rhoS / kg);
   dtLB = dx * dx * (tau - 0.5) / (3 * nu);
   npDEM = (dtLB / dtmax + 1);
   c = dx / dtLB;
@@ -1905,8 +1874,12 @@ int main(int argc, char** argv) {
           "RW %le Time %s \n",
           nbsteps, nbsteps * dt, energie_cin, energy_p, SE, WF, INCE, TSLIP,
           TRW, asctime(ptr_time));  // IFR TSE TBW
-  } while (nbsteps <= 8000);
-  // } while (nbsteps * dt <= duration);
+#if 1
+  } while (nbsteps <= 2000);
+#else
+  } while (nbsteps * dt <= duration);
+#endif
+  final_density();
 
   time(&time_raw_format);
   ptr_time = localtime(&time_raw_format);
