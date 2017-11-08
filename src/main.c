@@ -56,7 +56,11 @@ real dx, dtLB, c, c_squ;
 real _w[Q] = {4. / 9,  1. / 36, 1. / 9,  1. / 36, 1. / 9,
                1. / 36, 1. / 9,  1. / 36, 1. / 9};
 real * restrict w = _w;
+#if defined _OPENACC
+real f[lx][ly][Q];
+#else
 real (* restrict f)[ly][Q];
+#endif
 
 // ************************************
 // *                                  *
@@ -83,7 +87,11 @@ real s2 = 1.5, s3 = 1.4, s5 = 1.5, s7 = 1.5, s8 = 1.8868,
        s9 = 1.8868;  // s8=1.6666667,s9=1.6666667;
 
 // obstacle array
+#if defined _OPENACC
+int obst[lx][ly];
+#else
 int (* restrict obst)[ly];
+#endif
 // obstacle activity  array
 int (* restrict act)[ly];
 real (* restrict delta)[ly][Q];
@@ -1252,9 +1260,11 @@ void final_density() {
   fprintf(stderr, "final_density: %f\n", sum);
 }
 
+#pragma acc routine seq
 int min(int x, int y) {
   return (x < y) ? x : y;
 }
+#pragma acc routine seq
 int max(int x, int y) {
   return (x > y) ? x : y;
 }
@@ -1272,7 +1282,7 @@ void forces_fluid(int nx, int ny, real f[nx][ny][Q], int nbgrains, struct grain 
   }
 
 #pragma acc parallel copyout(fhf1[0:nbgrains], fhf2[0:nbgrains], fhf3[0:nbgrains]) \
-  copyin(obst[0:][0:], g[0:nbgrains], ey[0:], f[0:][y_start:y_end][0:], ex[0:]) {
+  copyin(obst[0:][0:], g[0:nbgrains], ey[0:], f[0:lx][0:ly][0:Q], ex[0:])
     for (int i = 0; i < nbgrains; ++i) {
       const real xc = (g[i].x1 - Mgx) / dx;
       const real yc = (g[i].x2 - Mby) / dx;
@@ -1310,12 +1320,12 @@ void forces_fluid(int nx, int ny, real f[nx][ny][Q], int nbgrains, struct grain 
         }
       }
     }
+  }
 
-    for (int i = 0; i < nbgrains; ++i) {
-      fhf1[i] *= rho_moy * 9 * nu * nu / (dx * (tau - 0.5) * (tau - 0.5));
-      fhf2[i] *= rho_moy * 9 * nu * nu / (dx * (tau - 0.5) * (tau - 0.5));
-      fhf3[i] *= dx * rho_moy * 9 * nu * nu / (dx * (tau - 0.5) * (tau - 0.5));
-    }
+  for (int i = 0; i < nbgrains; ++i) {
+    fhf1[i] *= rho_moy * 9 * nu * nu / (dx * (tau - 0.5) * (tau - 0.5));
+    fhf2[i] *= rho_moy * 9 * nu * nu / (dx * (tau - 0.5) * (tau - 0.5));
+    fhf3[i] *= dx * rho_moy * 9 * nu * nu / (dx * (tau - 0.5) * (tau - 0.5));
   }
 }
 
@@ -1786,9 +1796,10 @@ int main(int argc, char** argv) {
   g = read_sample(argv[1]);
   check_sample(nbgrains, g);
 
+#if !defined(_OPENACC)
   f = malloc(sizeof(real)*lx*ly*Q); assert(f);
-
   obst = malloc(sizeof(int)*lx*ly); assert(obst);
+#endif
   act = malloc(sizeof(int)*lx*ly); assert(act);
   delta = malloc(sizeof(real)*lx*ly*Q); assert(delta);
 
