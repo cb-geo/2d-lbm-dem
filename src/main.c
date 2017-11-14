@@ -235,6 +235,7 @@ real minimum_grain_radius(int nbgrains, struct grain g[nbgrains]) {
   return rMin;
 }
 //----------------------------------------------------
+#pragma acc routine seq
 void swap(real* a, real* b) {
   real tmp;
   tmp = *a;
@@ -1056,7 +1057,7 @@ void obst_construction() {
 // *   Principal LB: Collision - (Streaming + Boundary Conditions) *
 // ************************************************************************************************
 
-void collision_streaming() {
+void collision_streaming(int nbgrains, struct grain *g) {
   const int half = (Q - 1) / 2;
   const real a = 1. / 36;
 
@@ -1281,8 +1282,9 @@ void forces_fluid(int nx, int ny, real f[nx][ny][Q], int nbgrains, struct grain 
     fhf3[i] = 0;
   }
 
-#pragma acc parallel copyout(fhf1[0:nbgrains], fhf2[0:nbgrains], fhf3[0:nbgrains]) \
-  copyin(obst[0:][0:], g[0:nbgrains], ey[0:], f[0:lx][0:ly][0:Q], ex[0:])
+//#pragma acc parallel copyout(fhf1[0:nbgrains], fhf2[0:nbgrains], fhf3[0:nbgrains]) \
+  //copyin(obst[0:][0:], g[0:nbgrains], ey[0:], f[0:lx][0:ly][0:Q], ex[0:])
+//#pragma acc loop seq
     for (int i = 0; i < nbgrains; ++i) {
       const real xc = (g[i].x1 - Mgx) / dx;
       const real yc = (g[i].x2 - Mby) / dx;
@@ -1293,13 +1295,16 @@ void forces_fluid(int nx, int ny, real f[nx][ny][Q], int nbgrains, struct grain 
       const int yi = max(yc - rbl0, 1);
       const int yf = min(yc + rbl0, ny - 2);
 
-#pragma acc for independent
+//#pragma acc for independent
+//#pragma acc kernels
+//#pragma acc for independent
       for (int x = xi; x <= xf; ++x) {
-#pragma acc for independent
+//#pragma acc for independent
         for (int y = yi; y <= yf; ++y) {
           if (i == obst[x][y]) {
 // Search fluid nodes neighbors
-#pragma acc for independent
+//#pragma acc for independent
+//#pragma acc loop seq
           for (int iLB = 1; iLB < Q; ++iLB) {
             const int next_x = x + ex[iLB];
             const int next_y = y + ey[iLB];
@@ -1707,7 +1712,7 @@ void renderScene(void) {
     if (nbsteps % npDEM == 0) {
       reinit_obst_density();
       obst_construction();
-      collision_streaming();
+      collision_streaming(nbgrains, g);
 
       if (nbsteps % stepConsole == 0) check_density();
 
@@ -1886,7 +1891,7 @@ int main(int argc, char** argv) {
           nbsteps, nbsteps * dt, energie_cin, energy_p, SE, WF, INCE, TSLIP,
           TRW, asctime(ptr_time));  // IFR TSE TBW
 #if 1
-  } while (nbsteps <= 2000);
+  } while (nbsteps <= 200);
 #else
   } while (nbsteps * dt <= duration);
 #endif
