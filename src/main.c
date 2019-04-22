@@ -25,10 +25,10 @@
 #define scale 2.
 #endif
 #ifndef lx
-#define lx 2000
+#define lx 1010
 #endif
 #ifndef ly
-#define ly 1000
+#define ly 720
 #endif
 
 #ifdef SINGLE_PRECISION
@@ -91,7 +91,7 @@ real rMin_LB = 10.;
 // Fluid kinematic viscosity
 real nu = 1e-6;  // 15.5e-6 for air and 1e-6 for water at 293K or 20C
 real (* restrict press)[ly];
-real reductionR = 0.95;  // LBM reduced grain diameter
+real reductionR = 0.9;  // LBM reduced grain diameter
 
 //***********   Data DEM    ********************
 real G = 9.81;
@@ -1100,11 +1100,32 @@ void collision_streaming() {
     f[x][0][8] = f[x][1][4];
     f[x][0][7] = f[x + 1][1][3];  //;+uw_b/6;
     f[x][0][1] = f[x - 1][1][5];  //-uw_b/6;
-    // Top plate
+  }
+
+  /*
+  // Top plate
+  for (int x = 1; x < lx - 1; x++) {
     f[x][ly - 1][4] = f[x][ly - 2][8];
     f[x][ly - 1][3] = f[x - 1][ly - 2][7];  //-uw_h/6;
     f[x][ly - 1][5] = f[x + 1][ly - 2][1];  //+uw_h/6;
   }
+  */
+  // Top plate with added pressure pulse
+  double d_top = 1 + 0.1;
+  for (int x = 1; x < lx - 1; x++) {
+    double vt =
+        -1 + ((f[x][ly - 1][0] + f[x][ly - 1][2] + f[x][ly - 1][6]) +
+              2 * (f[x][ly - 1][1] + f[x][ly - 1][7] + f[x][ly - 1][8])) /
+                 (d_top);
+    f[x][ly -1][4] = f[x][ly -1][8] - (2. / 3.) * d_top * vt;
+    
+    f[x][ly -1][5] =
+        f[x][ly -1][1] - (1. / 6.) * d_top * vt + 0.5 * (f[x][ly -1][2] - f[x][ly -1][6]);
+
+    f[x][ly -1][1] =
+        f[x][ly -1][7] - (1. / 6.) * d_top * vt + 0.5 * (f[x][ly -1][6] - f[x][ly -1][2]);
+  }
+
   for (int y = 1; y < ly - 1; y++) {
     f[0][y][6] = f[1][y][2];
     f[0][y][7] = f[1][y + 1][3];  //;+uw_b/6;
@@ -1113,6 +1134,7 @@ void collision_streaming() {
     f[lx - 1][y][3] = f[lx - 2][y - 1][7];  //-uw_h/6;
     f[lx - 1][y][1] = f[lx - 2][y + 1][5];  //+uw_h/6;
   }
+
 
   // corner nodes
   f[0][0][7] = f[1][1][3];
@@ -1727,7 +1749,7 @@ void renderScene(void) {
       g[i].v3 = g[i].v3 + dt * g[i].a3 / 2.;
     }
 
-    acceleration_grains();
+    //acceleration_grains();
 
     for (i = 0; i <= nbgrains - 1; i++) {
       //	g[i].p=g[i].p/(2.*M_PI*g[i].r); // pressure on grains
@@ -1862,7 +1884,7 @@ int main(int argc, char** argv) {
           nbsteps, nbsteps * dt, energie_cin, energy_p, SE, WF, INCE, TSLIP,
           TRW, asctime(ptr_time));  // IFR TSE TBW
 #if 1
-  } while (nbsteps <= 2000);
+  } while (nbsteps <= 20000);
 #else
   } while (nbsteps * dt <= duration);
 #endif
