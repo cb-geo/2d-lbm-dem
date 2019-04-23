@@ -139,8 +139,8 @@ int stepView = 100;
 int stepPrint = 200;
 int stepConsole = 100;
 
-int stepStrob = 1000;  //visualisation steps
-int stepFilm = 2000;
+int stepStrob = 100;  //visualisation steps
+int stepFilm = 200;
 
 FILE* s_stats;
 
@@ -1111,7 +1111,13 @@ void collision_streaming() {
   }
   */
   // Top plate with added pressure pulse
-  double d_top = 1 + 0.1;
+  double d_top = 1.;
+  // Apply a pulse for the first 2000 steps and then keep it as draining
+  if (nbsteps <= 4000)
+    d_top = 1. + 0.1;
+  else
+    d_top = 1.;
+  
   for (int x = 1; x < lx - 1; x++) {
     double vt =
         -1 + ((f[x][ly - 1][0] + f[x][ly - 1][2] + f[x][ly - 1][6]) +
@@ -1884,7 +1890,7 @@ int main(int argc, char** argv) {
           nbsteps, nbsteps * dt, energie_cin, energy_p, SE, WF, INCE, TSLIP,
           TRW, asctime(ptr_time));  // IFR TSE TBW
 #if 1
-  } while (nbsteps <= 20000);
+  } while (nbsteps <= 50000);
 #else
   } while (nbsteps * dt <= duration);
 #endif
