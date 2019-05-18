@@ -28,8 +28,11 @@
 #define lx 1010
 #endif
 #ifndef ly
-#define ly 720
+#define ly 800
 #endif
+
+// Number of static grains
+const double ndgrains = 679;
 
 #ifdef SINGLE_PRECISION
 typedef float real;
@@ -91,7 +94,8 @@ real rMin_LB = 10.;
 // Fluid kinematic viscosity
 real nu = 1e-6;  // 15.5e-6 for air and 1e-6 for water at 293K or 20C
 real (* restrict press)[ly];
-real reductionR = 0.9;  // LBM reduced grain diameter
+real reductionR = 0.95;  // LBM reduced grain diameter
+real reductionConsolidation = 0.9;  // LBM reduced grain diameter
 
 //***********   Data DEM    ********************
 real G = 9.81;
@@ -1112,12 +1116,6 @@ void collision_streaming() {
   */
   // Top plate with added pressure pulse
   double d_top = 1.;
-  // Apply a pulse for the first 2000 steps and then keep it as draining
-  if (nbsteps <= 4000)
-    d_top = 1. + 0.1;
-  else
-    d_top = 1.;
-  
   for (int x = 1; x < lx - 1; x++) {
     double vt =
         -1 + ((f[x][ly - 1][0] + f[x][ly - 1][2] + f[x][ly - 1][6]) +
@@ -1755,13 +1753,20 @@ void renderScene(void) {
       g[i].v3 = g[i].v3 + dt * g[i].a3 / 2.;
     }
 
-    //acceleration_grains();
+    acceleration_grains();
 
     for (i = 0; i <= nbgrains - 1; i++) {
       //	g[i].p=g[i].p/(2.*M_PI*g[i].r); // pressure on grains
       g[i].v1 = g[i].v1 + dt * g[i].a1 / 2.;
       g[i].v2 = g[i].v2 + dt * g[i].a2 / 2.;
       g[i].v3 = g[i].v3 + dt * g[i].a3 / 2.;
+
+      // Consolidation
+      if (i > (ndgrains -1)) {
+        g[i].v1 = 0.0;
+        g[i].v2 = -0.1;
+        g[i].v3 = 0.0;
+      }
     }
     nbsteps++;
   }
@@ -1859,6 +1864,8 @@ int main(int argc, char** argv) {
          dt, npDEM, c);
   for (i = 0; i <= nbgrains - 1; i++) {
     rLB[i] = reductionR * g[i].r / dx;
+    // Consolidation: Piston grains which are more permeable (r = 0.7R)
+    if (i > (ndgrains -1)) rLB[i] = reductionConsolidation * g[i].r / dx;
   }
   init_obst();
 
