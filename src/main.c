@@ -32,7 +32,7 @@
 #endif
 
 // Number of static grains
-const double ndgrains = 684;
+const double ndgrains = 687;
 
 #ifdef SINGLE_PRECISION
 typedef float real;
