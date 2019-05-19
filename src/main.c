@@ -95,7 +95,8 @@ real rMin_LB = 10.;
 real nu = 1e-6;  // 15.5e-6 for air and 1e-6 for water at 293K or 20C
 real (* restrict press)[ly];
 real reductionR = 0.95;  // LBM reduced grain diameter
-real reductionConsolidation = 0.9;  // LBM reduced grain diameter
+real reductionConsolidation = 0.7;  // LBM reduced grain diameter
+real dvelocity = -0.05; // Velocity
 
 //***********   Data DEM    ********************
 real G = 9.81;
@@ -1764,7 +1765,7 @@ void renderScene(void) {
       // Consolidation
       if (i > (ndgrains -1)) {
         g[i].v1 = 0.0;
-        g[i].v2 = -0.1;
+        g[i].v2 = dvelocity;
         g[i].v3 = 0.0;
       }
     }
