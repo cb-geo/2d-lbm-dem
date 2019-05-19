@@ -1,0 +1,32 @@
+version: 2.0
+jobs:
+  build:
+    working_directory: /home/cbgeo/research/lbm-dem
+    docker:
+      - image: quay.io/cbgeo/mpm
+    steps:
+      - checkout
+      # GCC-8
+      - run:
+          name: GCC-8 build + MPI
+          command: |
+            mkdir -p build
+            [ "$(ls -A build)" ] && rm -rf build/*
+            cd build
+            cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=g++ -DCMAKE_EXPORT_COMPILE_COMMANDS=On ..
+            make -j2
+      # Clang-6.0
+      - run:
+          name: Clang-6.0 + Static analysis
+          command: |
+            mkdir -p build
+            [ "$(ls -A build)" ] && rm -rf build/*
+            cd build
+            scan-build cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=clang -DCMAKE_EXPORT_COMPILE_COMMANDS=On ..
+            scan-build make -j2 
+      # cppcheck
+      - run:
+          name: cppcheck
+          command: |
+            cppcheck --version
+            cppcheck --enable=warning --inconclusive --force --language=c++ --std=c++11 src/*.cc include/*.h include/*.tcc --error-exitcode=1
