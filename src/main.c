@@ -95,8 +95,9 @@ real rMin_LB = 10.;
 real nu = 1e-6;  // 15.5e-6 for air and 1e-6 for water at 293K or 20C
 real (* restrict press)[ly];
 real reductionR = 0.95;  // LBM reduced grain diameter
-real reductionConsolidation = 0.7;  // LBM reduced grain diameter
-real dvelocity = -0.05; // Velocity
+real reductionConsolidation = 0.95;  // LBM reduced grain diameter
+real dvelocity = -0.025; // Velocity
+real tsteps = 100000; // Total # of steps
 
 //***********   Data DEM    ********************
 real G = 9.81;
@@ -1898,7 +1899,7 @@ int main(int argc, char** argv) {
           nbsteps, nbsteps * dt, energie_cin, energy_p, SE, WF, INCE, TSLIP,
           TRW, asctime(ptr_time));  // IFR TSE TBW
 #if 1
-  } while (nbsteps <= 50000);
+  } while (nbsteps <= tsteps);
 #else
   } while (nbsteps * dt <= duration);
 #endif
