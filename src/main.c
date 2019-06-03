@@ -28,7 +28,7 @@
 #define lx 1010
 #endif
 #ifndef ly
-#define ly 720
+#define ly 800
 #endif
 
 #ifdef SINGLE_PRECISION
@@ -135,12 +135,12 @@ real ic = 0;
 int npDEM;
 real *rLB;
 
-int stepView = 100;
-int stepPrint = 200;
-int stepConsole = 100;
+int stepView = 50;
+int stepPrint = 50;
+int stepConsole = 50;
 
-int stepStrob = 100;  //visualisation steps
-int stepFilm = 200;
+int stepStrob = 50;  //visualisation steps
+int stepFilm = 50;
 
 FILE* s_stats;
 
@@ -1110,26 +1110,63 @@ void collision_streaming() {
     f[x][ly - 1][5] = f[x + 1][ly - 2][1];  //+uw_h/6;
   }
   */
-  // Top plate with added pressure pulse
-  double d_top = 1.;
-  // Apply a pulse for the first 2000 steps and then keep it as draining
-  if (nbsteps <= 4000)
-    d_top = 1. + 0.1;
-  else
-    d_top = 1.;
-  
+
+  // Top plate with a draining boundary
+  double d_drain = 1.;
   for (int x = 1; x < lx - 1; x++) {
     double vt =
         -1 + ((f[x][ly - 1][0] + f[x][ly - 1][2] + f[x][ly - 1][6]) +
               2 * (f[x][ly - 1][1] + f[x][ly - 1][7] + f[x][ly - 1][8])) /
-                 (d_top);
-    f[x][ly -1][4] = f[x][ly -1][8] - (2. / 3.) * d_top * vt;
-    
-    f[x][ly -1][5] =
-        f[x][ly -1][1] - (1. / 6.) * d_top * vt + 0.5 * (f[x][ly -1][2] - f[x][ly -1][6]);
+                 (d_drain);
+    f[x][ly - 1][4] = f[x][ly - 1][8] - (2. / 3.) * d_drain * vt;
 
-    f[x][ly -1][1] =
-        f[x][ly -1][7] - (1. / 6.) * d_top * vt + 0.5 * (f[x][ly -1][6] - f[x][ly -1][2]);
+    f[x][ly - 1][5] = f[x][ly - 1][1] - (1. / 6.) * d_drain * vt +
+                      0.5 * (f[x][ly - 1][2] - f[x][ly - 1][6]);
+
+    f[x][ly - 1][3] = f[x][ly - 1][7] - (1. / 6.) * d_drain * vt +
+                      0.5 * (f[x][ly - 1][6] - f[x][ly - 1][2]);
+  }
+
+  // Apply a pulse for the first 2000 steps and then keep it as draining
+  double d_top = 1.;
+  int pulse = 50;
+  if (nbsteps <= 1000) {
+    d_top = 1. + 0.001;
+    for (int x = 0; x < lx; x++) {
+      double vt = -1 + ((f[x][ly - (pulse)][0] + f[x][ly - (pulse)][2] +
+                         f[x][ly - (pulse)][6]) +
+                        2 * (f[x][ly - (pulse)][1] + f[x][ly - (pulse)][7] +
+                             f[x][ly - (pulse)][8])) /
+                           (d_top);
+      double vb = -1 + ((f[x][ly - (pulse)][0] + f[x][ly - (pulse)][2] +
+                         f[x][ly - (pulse)][6]) +
+                        2 * (f[x][ly - (pulse)][5] + f[x][ly - (pulse)][3] +
+                             f[x][ly - (pulse)][4])) /
+                           (d_top);
+
+      double f4 = f[x][ly - (pulse)][8] - (2. / 3.) * d_top * vt;
+
+      double f5 = f[x][ly - (pulse)][1] - (1. / 6.) * d_top * vt +
+                  0.5 * (f[x][ly - (pulse)][2] - f[x][ly - (pulse)][6]);
+
+      double f3 = f[x][ly - (pulse)][7] - (1. / 6.) * d_top * vt +
+                  0.5 * (f[x][ly - (pulse)][6] - f[x][ly - (pulse)][2]);
+
+      double f8 = f[x][ly - (pulse - 1)][4] - (2. / 3.) * d_top * vb;
+
+      double f1 = f[x][ly - (pulse - 1)][5] - (1. / 6.) * d_top * vb +
+                  0.5 * (f[x][ly - (pulse - 1)][6] - f[x][ly - (pulse - 1)][2]);
+
+      double f7 = f[x][ly - (pulse -1)][3] - (1. / 6.) * d_top * vb +
+                  0.5 * (f[x][ly - (pulse - 1)][2] - f[x][ly - (pulse - 1)][6]);
+
+      f[x][ly - (pulse)][4] = f4;
+      f[x][ly - (pulse)][5] = f5;
+      f[x][ly - (pulse)][3] = f3;
+      f[x][ly - (pulse - 1)][8] = f8;
+      f[x][ly - (pulse - 1)][1] = f1;
+      f[x][ly - (pulse - 1)][7] = f7;
+    }
   }
 
   for (int y = 1; y < ly - 1; y++) {
@@ -1141,14 +1178,20 @@ void collision_streaming() {
     f[lx - 1][y][1] = f[lx - 2][y + 1][5];  //+uw_h/6;
   }
 
-
   // corner nodes
   f[0][0][7] = f[1][1][3];
   f[lx - 1][0][1] = f[lx - 2][1][5];  //+uw_b/6
   f[0][ly - 1][5] = f[1][ly - 2][1];  //-uw_b/6
   f[lx - 1][ly - 1][3] = f[lx - 2][ly - 2][7];
 
-   // bounce back in obstacles
+  // Pulse nodes
+  f[0][ly - (pulse - 1)][7] = f[1][ly - pulse + 2][3];
+  f[lx - 1][ly - (pulse - 1)][1] = f[lx - 2][ly - pulse + 2][5];  //+uw_b/6
+  f[0][ly - pulse][5] = f[1][ly - pulse - 1][1];  //-uw_b/6
+  f[lx - 1][ly - pulse][3] = f[lx - 2][ly - pulse - 1][7];
+
+  
+  // bounce back in obstacles
   /////////////////////////////////////////////////////////
   //  To calculate force f[][][])                        //
   //  1: articlel of JYD-Mouloud                     //
