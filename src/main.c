@@ -1132,7 +1132,7 @@ void collision_streaming() {
   int pulse = 50;
   if (nbsteps <= 1000) {
     d_top = 1. + 0.001;
-    for (int x = 0; x < lx; x++) {
+    for (int x = 1; x < lx - 1; x++) {
       double vt = -1 + ((f[x][ly - (pulse)][0] + f[x][ly - (pulse)][2] +
                          f[x][ly - (pulse)][6]) +
                         2 * (f[x][ly - (pulse)][1] + f[x][ly - (pulse)][7] +
