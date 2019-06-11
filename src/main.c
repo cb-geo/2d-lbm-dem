@@ -25,7 +25,7 @@
 #define scale 2.
 #endif
 #ifndef lx
-#define lx 1010
+#define lx 1005
 #endif
 #ifndef ly
 #define ly 800
@@ -120,7 +120,7 @@ real murf = 0.01;              // 0.01
 real r = 1e-3;                 // 5e-4;v
 real distVerlet = 5e-4;        // changed to 1e-6 from 1e-3 for error
 long UpdateVerlet = 100.;
-real dtt = 1000000.0;  // Time after which wall to prepare sample is removed
+real dtt = 0.0;  // Time after which wall to prepare sample is removed
 real iterDEM = 100.;   // number of DEM iterations per LBM
 
 // Tracked stats
@@ -1579,13 +1579,13 @@ void VerletWall() {
   // real distVerlet=.1e-7;
   // Verlet WallB
 
-  if (nbsteps * dt < dtt) {
-    Mdx = 1.e-3 * lx / 10;
-    Mhy = (1.e-3 * ly / 10);
-  } else {
-    Mdx = 1.e-3 * lx;
-    Mhy = 1.e-3 * ly;
-  }
+  // if (nbsteps * dt < dtt) {
+  Mdx = 1.e-3 * lx / 20;
+  Mhy = (1.e-3 * ly / 10);
+  /*} else {
+      Mdx = 1.e-3 * lx;
+      Mhy = 1.e-3 * ly;
+      }*/
 
   for (i = 0; i < nbgrains; ++i) {
     dn = g[i].x2 - g[i].r - Mby;
@@ -1613,11 +1613,13 @@ void VerletWall() {
   // Verlet WallR
   for (i = 0; i < nbgrains; ++i) {
     dn = -g[i].x1 - g[i].r + Mdx;
+    // printf("gx: %f r: %f Mdx: %f dn: %f\n",  -g[i].x1,-g[i].r, Mdx, dn);
     if (dn < distVerlet) {
       neighbourWallR[nNeighWallR] = i;
       ++nNeighWallR;
     }
   }
+  printf("NeighboursR: %d\n",  nNeighWallR);
 }
 
 // *******************************************************************************************
@@ -1788,6 +1790,7 @@ void renderScene(void) {
       g[i].v3 = g[i].v3 + dt * g[i].a3 / 2.;
 
       // Consolidation
+      if (nbsteps > 61000) dvelocity = 0.;
       if (i > (ndgrains - 1)) {
         g[i].v1 = 0.0;
         g[i].v2 = dvelocity;
