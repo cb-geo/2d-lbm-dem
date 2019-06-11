@@ -1,45 +1,45 @@
 /*****************************************************************************
-*
-* Copyright (c) 2000 - 2008, Lawrence Livermore National Security, LLC
-* Produced at the Lawrence Livermore National Laboratory
-* LLNL-CODE-400142
-* All rights reserved.
-*
-* This file is  part of VisIt. For  details, see https://visit.llnl.gov/.  The
-* full copyright notice is contained in the file COPYRIGHT located at the root
-* of the VisIt distribution or at http://www.llnl.gov/visit/copyright.html.
-*
-* Redistribution  and  use  in  source  and  binary  forms,  with  or  without
-* modification, are permitted provided that the following conditions are met:
-*
-*  - Redistributions of  source code must  retain the above  copyright notice,
-*    this list of conditions and the disclaimer below.
-*  - Redistributions in binary form must reproduce the above copyright notice,
-*    this  list of  conditions  and  the  disclaimer (as noted below)  in  the
-*    documentation and/or other materials provided with the distribution.
-*  - Neither the name of  the LLNS/LLNL nor the names of  its contributors may
-*    be used to endorse or promote products derived from this software without
-*    specific prior written permission.
-*
-* THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT  HOLDERS AND CONTRIBUTORS "AS IS"
-* AND ANY EXPRESS OR  IMPLIED WARRANTIES, INCLUDING,  BUT NOT  LIMITED TO, THE
-* IMPLIED WARRANTIES OF MERCHANTABILITY AND  FITNESS FOR A PARTICULAR  PURPOSE
-* ARE  DISCLAIMED. IN  NO EVENT  SHALL LAWRENCE  LIVERMORE NATIONAL  SECURITY,
-* LLC, THE  U.S.  DEPARTMENT OF  ENERGY  OR  CONTRIBUTORS BE  LIABLE  FOR  ANY
-* DIRECT,  INDIRECT,   INCIDENTAL,   SPECIAL,   EXEMPLARY,  OR   CONSEQUENTIAL
-* DAMAGES (INCLUDING, BUT NOT  LIMITED TO, PROCUREMENT OF  SUBSTITUTE GOODS OR
-* SERVICES; LOSS OF  USE, DATA, OR PROFITS; OR  BUSINESS INTERRUPTION) HOWEVER
-* CAUSED  AND  ON  ANY  THEORY  OF  LIABILITY,  WHETHER  IN  CONTRACT,  STRICT
-* LIABILITY, OR TORT  (INCLUDING NEGLIGENCE OR OTHERWISE)  ARISING IN ANY  WAY
-* OUT OF THE  USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
-* DAMAGE.
-*
-*****************************************************************************/
- 
+ *
+ * Copyright (c) 2000 - 2008, Lawrence Livermore National Security, LLC
+ * Produced at the Lawrence Livermore National Laboratory
+ * LLNL-CODE-400142
+ * All rights reserved.
+ *
+ * This file is  part of VisIt. For  details, see https://visit.llnl.gov/.  The
+ * full copyright notice is contained in the file COPYRIGHT located at the root
+ * of the VisIt distribution or at http://www.llnl.gov/visit/copyright.html.
+ *
+ * Redistribution  and  use  in  source  and  binary  forms,  with  or  without
+ * modification, are permitted provided that the following conditions are met:
+ *
+ *  - Redistributions of  source code must  retain the above  copyright notice,
+ *    this list of conditions and the disclaimer below.
+ *  - Redistributions in binary form must reproduce the above copyright notice,
+ *    this  list of  conditions  and  the  disclaimer (as noted below)  in  the
+ *    documentation and/or other materials provided with the distribution.
+ *  - Neither the name of  the LLNS/LLNL nor the names of  its contributors may
+ *    be used to endorse or promote products derived from this software without
+ *    specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT  HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR  IMPLIED WARRANTIES, INCLUDING,  BUT NOT  LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND  FITNESS FOR A PARTICULAR  PURPOSE
+ * ARE  DISCLAIMED. IN  NO EVENT  SHALL LAWRENCE  LIVERMORE NATIONAL  SECURITY,
+ * LLC, THE  U.S.  DEPARTMENT OF  ENERGY  OR  CONTRIBUTORS BE  LIABLE  FOR  ANY
+ * DIRECT,  INDIRECT,   INCIDENTAL,   SPECIAL,   EXEMPLARY,  OR   CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT  LIMITED TO, PROCUREMENT OF  SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF  USE, DATA, OR PROFITS; OR  BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED  AND  ON  ANY  THEORY  OF  LIABILITY,  WHETHER  IN  CONTRACT,  STRICT
+ * LIABILITY, OR TORT  (INCLUDING NEGLIGENCE OR OTHERWISE)  ARISING IN ANY  WAY
+ * OUT OF THE  USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
+ * DAMAGE.
+ *
+ *****************************************************************************/
+
 /* ************************************************************************* //
 //                              visit_writer.h                               //
 // ************************************************************************* */
- 
+
 /*
 // This file contains function prototypes for writing out point meshes,
 // unstructured meshes, rectilinear meshes, regular meshes, and
@@ -63,8 +63,7 @@
 // interpolation problems appear along grid boundaries.  For additional
 // help with this issue, e-mail visit-help@llnl.gov
 */
- 
- 
+
 /* ****************************************************************************
 //  Function: write_point_mesh
 //
@@ -90,13 +89,11 @@
 //  Creation:   September 2, 2004
 //
 // ***************************************************************************/
- 
-void write_point_mesh(const char *filename, int useBinary, int npts,
-                      float *pts, int nvars, int *vardim,
-                      const char * const *varnames, float **vars);
- 
- 
- 
+
+void write_point_mesh(const char* filename, int useBinary, int npts, float* pts,
+                      int nvars, int* vardim, const char* const* varnames,
+                      float** vars);
+
 /* ****************************************************************************
 //  Function: write_unstructured_mesh
 //
@@ -163,23 +160,21 @@ void write_point_mesh(const char *filename, int useBinary, int npts,
 //  Creation:   September 2, 2004
 //
 // ***************************************************************************/
- 
-#define VISIT_VERTEX         1
-#define VISIT_LINE           3
-#define VISIT_TRIANGLE       5
-#define VISIT_QUAD           9
-#define VISIT_TETRA         10
-#define VISIT_HEXAHEDRON    12
-#define VISIT_WEDGE         13
-#define VISIT_PYRAMID       14
- 
-void write_unstructured_mesh(const char *filename, int useBinary, int npts,
-                             float *pts, int ncells, int *celltypes, int *conn,
-                             int nvars, int *vardim, int *centering,
-                             const char * const *varnames, float **vars);
- 
- 
- 
+
+#define VISIT_VERTEX 1
+#define VISIT_LINE 3
+#define VISIT_TRIANGLE 5
+#define VISIT_QUAD 9
+#define VISIT_TETRA 10
+#define VISIT_HEXAHEDRON 12
+#define VISIT_WEDGE 13
+#define VISIT_PYRAMID 14
+
+void write_unstructured_mesh(const char* filename, int useBinary, int npts,
+                             float* pts, int ncells, int* celltypes, int* conn,
+                             int nvars, int* vardim, int* centering,
+                             const char* const* varnames, float** vars);
+
 /* ****************************************************************************
 //  Function: write_regular_mesh
 //
@@ -212,14 +207,11 @@ void write_unstructured_mesh(const char *filename, int useBinary, int npts,
 //  Creation:   September 2, 2004
 //
 // ***************************************************************************/
- 
-void write_regular_mesh(const char *filename, int useBinary, int *dims,
-                        int nvars, int *vardim, int *centering,
-                        const char * const *varnames, float **vars);
- 
- 
- 
- 
+
+void write_regular_mesh(const char* filename, int useBinary, int* dims,
+                        int nvars, int* vardim, int* centering,
+                        const char* const* varnames, float** vars);
+
 /* ****************************************************************************
 //  Function: write_rectilinear_mesh
 //
@@ -258,15 +250,12 @@ void write_regular_mesh(const char *filename, int useBinary, int *dims,
 //  Creation:   September 2, 2004
 //
 // ***************************************************************************/
- 
-void write_rectilinear_mesh(const char *filename, int useBinary,
-                            int *dims, float *x, float *y, float *z,
-                            int nvars, int *vardim, int *centering,
-                            const char * const *varnames, float **vars);
- 
- 
- 
- 
+
+void write_rectilinear_mesh(const char* filename, int useBinary, int* dims,
+                            float* x, float* y, float* z, int nvars,
+                            int* vardim, int* centering,
+                            const char* const* varnames, float** vars);
+
 /* ****************************************************************************
 //  Function: write_curvilinear_mesh
 //
@@ -299,8 +288,7 @@ void write_rectilinear_mesh(const char *filename, int useBinary,
 //  Creation:   September 2, 2004
 //
 // ***************************************************************************/
- 
-void write_curvilinear_mesh(const char *filename, int useBinary,
-                            int *dims, float *pts,
-                            int nvars, int *vardim, int *centering,
-                            const char * const *varnames, float **vars);
+
+void write_curvilinear_mesh(const char* filename, int useBinary, int* dims,
+                            float* pts, int nvars, int* vardim, int* centering,
+                            const char* const* varnames, float** vars);

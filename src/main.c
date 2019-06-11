@@ -1,19 +1,19 @@
 /*************** 2D LBM-DEM Code **************************/
-#include <stdlib.h>
-#include <stdio.h>
-#include <math.h>
-#include <string.h>
-#include <unistd.h>
-#include <time.h>
-#include <assert.h>
 #include "visit_writer.h"
+#include <assert.h>
+#include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+#include <unistd.h>
 
 #ifdef _OPENMP
 #include <omp.h>
 #endif
 
 // Switch on or off FLUID
-#define _FLUIDE_  
+#define _FLUIDE_
 
 // Maximum number of soil grains
 #ifndef nbgrainsMax
@@ -47,16 +47,16 @@ typedef double real;
 #define rhoS 2650  // Density of solids
 #define rhoW 1000  // Density of water
 
-#define duration 1.5 // Duration of simulation
+#define duration 1.5  // Duration of simulation
 //*********************   Data LBM    ************************
 #define Q 9
 int nbgrains;
 // width of LBM grid size, time step, lattice speed
 real dx, dtLB, c, c_squ;
 real _w[Q] = {4. / 9,  1. / 36, 1. / 9,  1. / 36, 1. / 9,
-               1. / 36, 1. / 9,  1. / 36, 1. / 9};
-real * restrict w = _w;
-real (* restrict f)[ly][Q];
+              1. / 36, 1. / 9,  1. / 36, 1. / 9};
+real* restrict w = _w;
+real (*restrict f)[ly][Q];
 
 // ************************************
 // *                                  *
@@ -70,8 +70,8 @@ real (* restrict f)[ly][Q];
 // *                                  *
 // ************************************
 
-int ex[Q] = {0, -1, -1, -1,  0,  1, 1, 1, 0};
-int ey[Q] = {0,  1,  0, -1, -1, -1, 0, 1, 1};
+int ex[Q] = {0, -1, -1, -1, 0, 1, 1, 1, 0};
+int ey[Q] = {0, 1, 0, -1, -1, -1, 0, 1, 1};
 
 // average fluid density
 real rho_moy = 1000;  // air density =1 or water =1000 or 999.7 at 20
@@ -80,24 +80,24 @@ real rho_outlet, q_outlet;
 // relaxation parameter
 real tau = 0.506;
 real s2 = 1.5, s3 = 1.4, s5 = 1.5, s7 = 1.5, s8 = 1.8868,
-       s9 = 1.8868;  // s8=1.6666667,s9=1.6666667;
+     s9 = 1.8868;  // s8=1.6666667,s9=1.6666667;
 
 // obstacle array
-int (* restrict obst)[ly];
+int (*restrict obst)[ly];
 // obstacle activity  array
-int (* restrict act)[ly];
-real (* restrict delta)[ly][Q];
+int (*restrict act)[ly];
+real (*restrict delta)[ly][Q];
 
 // LB diameter for the smallest disk (in nodes number)
 real rMin_LB = 10.;
 
 // Fluid kinematic viscosity
 real nu = 1e-6;  // 15.5e-6 for air and 1e-6 for water at 293K or 20C
-real (* restrict press)[ly];
-real reductionR = 0.95;  // LBM reduced grain diameter
+real (*restrict press)[ly];
+real reductionR = 0.95;              // LBM reduced grain diameter
 real reductionConsolidation = 0.95;  // LBM reduced grain diameter
-real dvelocity = -0.025; // Velocity
-real tsteps = 100000; // Total # of steps
+real dvelocity = -0.025;             // Velocity
+real tsteps = 100000;                // Total # of steps
 
 //***********   Data DEM    ********************
 real G = 9.81;
@@ -107,45 +107,43 @@ real dt;  //=5.e-8;
 real dt2;
 
 // Spring stiffness
-real km = 3e+6, kg = 1.6e+6;  // 2e8 1.6e8
+real km = 3e+6, kg = 1.6e+6;   // 2e8 1.6e8
 real kt = 1.0e+6, ktm = 2e+6;  /// changed to higher for lesser
-                                 /// interpenetration in sample generation 1.3e8
-real nug = 6.4e+1;  // 1.1e1
+                               /// interpenetration in sample generation 1.3e8
+real nug = 6.4e+1;             // 1.1e1
 real num = 8.7e+1, numb = 8.7e+1;  // 1.5e1
-real nuf = 1.5e-1, nugt = 5e-1;  // frictionless packing nugt
+real nuf = 1.5e-1, nugt = 5e-1;    // frictionless packing nugt
 real mu = .5317;
-real mug = 0.0;  // Mu for assembling
+real mug = 0.0;                // Mu for assembling
 real mum = .466, mumb = .466;  // 0.466 //0.53 0.51 0.43
-real murf = 0.01;  // 0.01
-real r = 1e-3;  // 5e-4;v
-real distVerlet = 5e-4;  // changed to 1e-6 from 1e-3 for error
+real murf = 0.01;              // 0.01
+real r = 1e-3;                 // 5e-4;v
+real distVerlet = 5e-4;        // changed to 1e-6 from 1e-3 for error
 long UpdateVerlet = 100.;
-real dtt = 0.0;  // Time after which wall to prepare sample is removed
-real iterDEM = 100.;  // number of DEM iterations per LBM
+real dtt = 1000000.0;  // Time after which wall to prepare sample is removed
+real iterDEM = 100.;   // number of DEM iterations per LBM
 
 // Tracked stats
 // EPE-Effective potential energy
 // Total Wall Friction - WF,
 // SE- Strain Energy ESE & IFR- Total Internal Friction
-real xfront, height, energie_cin, energie_x, energie_y, energie_teta,
-    energy_p, energy_EPE, zmean, SE, ESE, WF,
-    IFR;
+real xfront, height, energie_cin, energie_x, energie_y, energie_teta, energy_p,
+    energy_EPE, zmean, SE, ESE, WF, IFR;
 real TSE = 0.0, TBW = 0.0, INCE = 0.0, TSLIP = 0.0,
-       TRW =
-           0.0;  // Total Body Work and Strain Energy TRW_ Total Rotational Work
+     TRW = 0.0;  // Total Body Work and Strain Energy TRW_ Total Rotational Work
 real pf = 0., pft = 0., pff = 0.;  // previous force
 real ic = 0;
 
 // ********   Control parameters   *************
 // Number of DEM steps in LB
 int npDEM;
-real *rLB;
+real* rLB;
 
 int stepView = 100;
 int stepPrint = 200;
 int stepConsole = 100;
 
-int stepStrob = 100;  //visualisation steps
+int stepStrob = 100;  // visualisation steps
 int stepFilm = 200;
 
 FILE* s_stats;
@@ -153,13 +151,13 @@ FILE* s_stats;
 int nFile = 0;  // Nth File saves LB
 
 int cptFlash;
-int *cumul;
-int * restrict neighbours;
+int* cumul;
+int* restrict neighbours;
 // NeighbourWall Bottom, Right, Left & Top
-int * restrict neighbourWallB;
-int * restrict neighbourWallR;
-int * restrict neighbourWallL;
-int * restrict neighbourWallT;
+int* restrict neighbourWallB;
+int* restrict neighbourWallR;
+int* restrict neighbourWallL;
+int* restrict neighbourWallT;
 
 int nNeighWallb, nNeighWallt, nNeighWallL, nNeighWallR;
 
@@ -182,26 +180,26 @@ struct contact {
 struct force {
   real f1, f2, f3;
 };
-struct force * restrict fhf;
-real * restrict fhf1, * restrict fhf2, * restrict fhf3;
+struct force* restrict fhf;
+real *restrict fhf1, *restrict fhf2, *restrict fhf3;
 
 struct grain {
   real x1, x2, x3;
   real v1, v2, v3;
   real a1, a2, a3;
   real r, m, mw, It;
-  real p;  // Pressure on grain
-  real s;  // shear
-  real f1, f2;  // force
-  real ifm, fm;  // friction mobility
-  real fr, ifr;  // frictional energy wall and Internal
+  real p;                   // Pressure on grain
+  real s;                   // shear
+  real f1, f2;              // force
+  real ifm, fm;             // friction mobility
+  real fr, ifr;             // frictional energy wall and Internal
   real M11, M12, M21, M22;  // Moments M11, M12, M21, M22
   real ice, slip,
       rw;  // Inelastic Collisional Energy, slip, & Rotational work
   int z;   // number of contacts
   int zz;  // number of contacts sans the Walls
 };
-struct grain * restrict g;
+struct grain* restrict g;
 
 // Wall
 static real Mby = 0.;
@@ -240,36 +238,36 @@ void swap(real* a, real* b) {
 // *******************************************************************
 // *   Output files                                             *
 // *******************************************************************
-void write_vtk(int nx, int ny, real f[nx][ny][Q], int nbgrains, struct grain g[nbgrains]) {
+void write_vtk(int nx, int ny, real f[nx][ny][Q], int nbgrains,
+               struct grain g[nbgrains]) {
   char filename[255];
   sprintf(filename, "lbm-dem_%.6i", nFile);
 
   int dims[] = {nx, ny, 1};
-  float *xs = malloc(sizeof(float)*nx);
-  float *ys = malloc(sizeof(float)*ny);
-  float *zs = malloc(sizeof(float)*1);
+  float* xs = malloc(sizeof(float) * nx);
+  float* ys = malloc(sizeof(float) * ny);
+  float* zs = malloc(sizeof(float) * 1);
   float pasxyz = 1. / nx;
-  for (int i = 0; i < nx; i++) xs[i] = i*pasxyz;
-  for (int i = 0; i < ny; i++) ys[i] = i*pasxyz;
+  for (int i = 0; i < nx; i++) xs[i] = i * pasxyz;
+  for (int i = 0; i < ny; i++) ys[i] = i * pasxyz;
   *zs = 0;
 
   int nvars = 5;
   int vardims[] = {1, 3, 3, 1, 3};
   int centering[] = {1, 1, 1, 1, 1};
 
-  char *varnames[] = {
-    "grain_pressure", "grain_velocity", "grain_acceleration",
-    "fluid_pressure", "fluid_velocity" };
+  char* varnames[] = {"grain_pressure", "grain_velocity", "grain_acceleration",
+                      "fluid_pressure", "fluid_velocity"};
 
-  float (*grain_pressure    )[nx]    = malloc(sizeof(float)*nx*ny);
-  float (*grain_velocity    )[nx][3] = malloc(sizeof(float)*nx*ny*3);
-  float (*grain_acceleration)[nx][3] = malloc(sizeof(float)*nx*ny*3);
-  float (*fluid_pressure    )[nx]    = malloc(sizeof(float)*nx*ny);
-  float (*fluid_velocity    )[nx][3] = malloc(sizeof(float)*nx*ny*3);
+  float(*grain_pressure)[nx] = malloc(sizeof(float) * nx * ny);
+  float(*grain_velocity)[nx][3] = malloc(sizeof(float) * nx * ny * 3);
+  float(*grain_acceleration)[nx][3] = malloc(sizeof(float) * nx * ny * 3);
+  float(*fluid_pressure)[nx] = malloc(sizeof(float) * nx * ny);
+  float(*fluid_velocity)[nx][3] = malloc(sizeof(float) * nx * ny * 3);
 
-  float *vars[] = {
-    (float*)grain_pressure, (float*)grain_velocity, (float*)grain_acceleration,
-    (float*)fluid_pressure, (float*)fluid_velocity };
+  float* vars[] = {(float*)grain_pressure, (float*)grain_velocity,
+                   (float*)grain_acceleration, (float*)fluid_pressure,
+                   (float*)fluid_velocity};
 
   for (int y = 0; y < ny; y++) {
     for (int x = 0; x < nx; x++) {
@@ -307,12 +305,14 @@ void write_vtk(int nx, int ny, real f[nx][ny][Q], int nbgrains, struct grain g[n
           fluid_velocity[y][x][0] += f[x][y][j] * ex[j];
           fluid_velocity[y][x][1] += f[x][y][j] * ey[j];
         }
-        fluid_pressure[y][x] = (1. / 3.) * rho_moy * (fluid_pressure[y][x] - 1.);
+        fluid_pressure[y][x] =
+            (1. / 3.) * rho_moy * (fluid_pressure[y][x] - 1.);
       }
     }
   }
 
-  write_rectilinear_mesh(filename, 1, dims, xs, ys, zs, nvars, vardims, centering, varnames, vars);
+  write_rectilinear_mesh(filename, 1, dims, xs, ys, zs, nvars, vardims,
+                         centering, varnames, vars);
 
   free(xs);
   free(ys);
@@ -453,7 +453,8 @@ void write_forces() {
            g[i].r - g[j].r;
       if (dn < -1e-10 && i != j) {
         //  printf("dn for i %i and j %i are: %le \n",i,j,dn);
-        fprintf(outfile1, "%le setlinewidth \n 0.0 setgray \n", 1.); // c1[i][j].fn);
+        fprintf(outfile1, "%le setlinewidth \n 0.0 setgray \n",
+                1.);  // c1[i][j].fn);
         fprintf(outfile1, "1 setlinecap \n newpath \n");
         fprintf(outfile1, "%le %le moveto \n %le %le lineto\n", g[i].x1 * 10000,
                 g[i].x2 * 10000, g[j].x1 * 10000, g[j].x2 * 10000);
@@ -593,19 +594,19 @@ void temp_sample() {
   }
 }
 
-struct grain* read_sample(char * filename_sample) {
-  FILE *sample_file = fopen(filename_sample, "r");
+struct grain* read_sample(char* filename_sample) {
+  FILE* sample_file = fopen(filename_sample, "r");
 
   char com[256];
   fgets(com, 256, sample_file);
   printf("%s\n", com);
   fscanf(sample_file, "%d\n", &nbgrains);
 
-  struct grain *g = malloc(sizeof(struct grain)*nbgrains);
+  struct grain* g = malloc(sizeof(struct grain) * nbgrains);
 
   printf("Nb grains %d\n", nbgrains);
   for (int i = 0; i < nbgrains; ++i) {
-    fscanf(sample_file, FLOAT_FORMAT" "FLOAT_FORMAT" "FLOAT_FORMAT";\n",
+    fscanf(sample_file, FLOAT_FORMAT " " FLOAT_FORMAT " " FLOAT_FORMAT ";\n",
            &g[i].r, &g[i].x1, &g[i].x2);
     // printf("%le %le %le\n",g[i].r,g[i].x1,g[i].x2);
     g[i].r = g[i].r * r;
@@ -721,7 +722,7 @@ struct force force_grains(long i, long j) {
   real ftest;
   struct force f;
   double fn, ft;
-  
+
   // distance relative
   xOiOj = g[i].x1 - g[j].x1;
   yOiOj = g[i].x2 - g[j].x2;
@@ -748,7 +749,7 @@ struct force force_grains(long i, long j) {
     fn = -kg * dn - nug * vn;
 
     if (fn < 0) fn = 0.0;
-    ft = - kt * vt * dt;
+    ft = -kt * vt * dt;
     ftest = mu * fn;
     if (fabs(ft) > ftest) {
       if (ft < 0.0)
@@ -766,8 +767,7 @@ struct force force_grains(long i, long j) {
     g[i].f2 += f.f2;
     g[i].s += ft;
     g[j].s += ft;
-    g[i].slip +=
-        fabs(ft) * (fabs(vt * dt) + (fabs(ft - pft)) / kt);
+    g[i].slip += fabs(ft) * (fabs(vt * dt) + (fabs(ft - pft)) / kt);
     pft = ft;
     g[i].rw += fabs(f.f3) * (fabs(g[i].v3 * dt) + (fabs(f.f3 - pff)) / kt);
     pff = f.f3;
@@ -838,10 +838,9 @@ struct force force_WallT(long i, real dn) {
   ic += num * vn * vn * dt;
   if (fn > 0.) fn = 0.;
   // relative tangential velocity
-  vt = g[i].v1 + g[i].v3 * g[i].r -
-       amp * freq * cos(freq * t);
+  vt = g[i].v1 + g[i].v3 * g[i].r - amp * freq * cos(freq * t);
   ft = fabs(ktm * vt);
-  
+
   //	if (nbsteps*dt<dtt){mumb=mug;nugt=0;}
   if (vt >= 0) {
     ftmax = mumb * fn - nugt * vt;
@@ -913,7 +912,7 @@ struct force force_WallR(long i, real dn) {
   vn = g[i].v1;
   fn = km * dn - num * vn;
   //	ic+=num*vn*vn*dt;
-  vt = g[i].v2;  // tangential velcoty
+  vt = g[i].v2;   // tangential velcoty
   ft = mum * fn;  // ic+=nugt*vt*vt*dt;
   // ftmax=mum*fn-num*vt;
   if (vt > 0) ft = -ft;
@@ -955,16 +954,21 @@ void reinit_obst_density() {
     for (int y = 1; y < ly - 1; y++) {
       int i = obst[x][y];
       if (i != -1) {
-       // Usqu: the standard (^2) the speed of the node from the portion
-       // solid to the fluid portion
-        real u_squ = ((g[i].v1 - (y * dx + Mby - g[i].x2) * g[i].v3) * (g[i].v1 - (y * dx + Mby - g[i].x2) * g[i].v3)
-                     +(g[i].v2 + (x * dx + Mgx - g[i].x1) * g[i].v3) * (g[i].v2 + (x * dx + Mgx - g[i].x1) * g[i].v3)) / (c * c);
+        // Usqu: the standard (^2) the speed of the node from the portion
+        // solid to the fluid portion
+        real u_squ = ((g[i].v1 - (y * dx + Mby - g[i].x2) * g[i].v3) *
+                          (g[i].v1 - (y * dx + Mby - g[i].x2) * g[i].v3) +
+                      (g[i].v2 + (x * dx + Mgx - g[i].x1) * g[i].v3) *
+                          (g[i].v2 + (x * dx + Mgx - g[i].x1) * g[i].v3)) /
+                     (c * c);
         for (int iLB = 0; iLB < Q; iLB++) {
           // eu : e.u in formula feq
 
           real eu = (ex[iLB] * (g[i].v1 - (y * dx + Mby - g[i].x2) * g[i].v3) +
-                     ey[iLB] * (g[i].v2 + (x * dx + Mgx - g[i].x1) * g[i].v3)) / c;
-          f[x][y][iLB] = w[iLB] * (1. + 3 * eu + 4.5 * eu * eu - 1.5 * u_squ);  //*rho_moy;
+                     ey[iLB] * (g[i].v2 + (x * dx + Mgx - g[i].x1) * g[i].v3)) /
+                    c;
+          f[x][y][iLB] =
+              w[iLB] * (1. + 3 * eu + 4.5 * eu * eu - 1.5 * u_squ);  //*rho_moy;
         }
       }
     }
@@ -1029,8 +1033,8 @@ void obst_construction() {
                                    // next_y=ly-1;
             if (obst[next_x][next_y] == -1) {
 
-              // Calculating the distance between the node fluid and the wall of the particle
-              // (Klaus-Nils-Ulrich)
+              // Calculating the distance between the node fluid and the wall of
+              // the particle (Klaus-Nils-Ulrich)
 
               act[x][y] = 1;
               xp = x;
@@ -1055,25 +1059,32 @@ void collision_streaming() {
   const int half = (Q - 1) / 2;
   const real a = 1. / 36;
 
-// Post-collision part computation
-// (Yu-Mei-Luo-Shyy)
+  // Post-collision part computation
+  // (Yu-Mei-Luo-Shyy)
   for (int x = 1; x < lx - 1; x++) {
     for (int y = 1; y < ly - 1; y++) {
       if (obst[x][y] == -1) {
 
-        real rho = f[x][y][0] + f[x][y][1] + f[x][y][2] + f[x][y][3] + f[x][y][4]
-                 + f[x][y][5] + f[x][y][6] + f[x][y][7] + f[x][y][8];
+        real rho = f[x][y][0] + f[x][y][1] + f[x][y][2] + f[x][y][3] +
+                   f[x][y][4] + f[x][y][5] + f[x][y][6] + f[x][y][7] +
+                   f[x][y][8];
 
-        real e = -4 * f[x][y][0] + 2 * f[x][y][1] - f[x][y][2] + 2 * f[x][y][3] -
-          f[x][y][4] + 2 * f[x][y][5] - f[x][y][6] + 2 * f[x][y][7] - f[x][y][8];
+        real e = -4 * f[x][y][0] + 2 * f[x][y][1] - f[x][y][2] +
+                 2 * f[x][y][3] - f[x][y][4] + 2 * f[x][y][5] - f[x][y][6] +
+                 2 * f[x][y][7] - f[x][y][8];
 
         real eps = 4 * f[x][y][0] + f[x][y][1] - 2 * f[x][y][2] + f[x][y][3] -
-          2 * f[x][y][4] + f[x][y][5] - 2 * f[x][y][6] + f[x][y][7] - 2 * f[x][y][8];
+                   2 * f[x][y][4] + f[x][y][5] - 2 * f[x][y][6] + f[x][y][7] -
+                   2 * f[x][y][8];
 
-        real j_x = f[x][y][5] + f[x][y][6] + f[x][y][7] - f[x][y][1] - f[x][y][2] - f[x][y][3];
-        real q_x = -f[x][y][1] + 2 * f[x][y][2] - f[x][y][3] + f[x][y][5] - 2 * f[x][y][6] + f[x][y][7];
-        real j_y = f[x][y][1] + f[x][y][8] + f[x][y][7] - f[x][y][3] - f[x][y][4] - f[x][y][5];
-        real q_y = f[x][y][1] - f[x][y][3] + 2 * f[x][y][4] - f[x][y][5] + f[x][y][7] - 2 * f[x][y][8];
+        real j_x = f[x][y][5] + f[x][y][6] + f[x][y][7] - f[x][y][1] -
+                   f[x][y][2] - f[x][y][3];
+        real q_x = -f[x][y][1] + 2 * f[x][y][2] - f[x][y][3] + f[x][y][5] -
+                   2 * f[x][y][6] + f[x][y][7];
+        real j_y = f[x][y][1] + f[x][y][8] + f[x][y][7] - f[x][y][3] -
+                   f[x][y][4] - f[x][y][5];
+        real q_y = f[x][y][1] - f[x][y][3] + 2 * f[x][y][4] - f[x][y][5] +
+                   f[x][y][7] - 2 * f[x][y][8];
         real p_xx = f[x][y][2] - f[x][y][4] + f[x][y][6] - f[x][y][8];
         real p_xy = -f[x][y][1] + f[x][y][3] - f[x][y][5] + f[x][y][7];
 
@@ -1087,15 +1098,23 @@ void collision_streaming() {
         real p_xxO = p_xx - s8 * (p_xx - (j_x2 - j_y2) / rho);
         real p_xyO = p_xy - s9 * (p_xy - j_x * j_y / rho);
 
-        f[x][y][0] = a * (4*rho - 4 * eO + 4 * epsO);
-        f[x][y][2] = a * (4*rho - eO - 2*epsO - 6*j_x + 6*q_xO + 9*p_xxO);
-        f[x][y][4] = a * (4*rho - eO - 2*epsO - 6*j_y + 6*q_yO - 9*p_xxO);
-        f[x][y][6] = a * (4*rho - eO - 2*epsO + 6*j_x - 6*q_xO + 9*p_xxO);
-        f[x][y][8] = a * (4*rho - eO - 2*epsO + 6*j_y - 6*q_yO - 9*p_xxO);
-        f[x][y][1] = a * (4*rho + 2*eO + epsO - 6*j_x - 3*q_xO + 6*j_y + 3*q_yO - 9*p_xyO);
-        f[x][y][3] = a * (4*rho + 2*eO + epsO - 6*j_x - 3*q_xO - 6*j_y - 3*q_yO + 9*p_xyO);
-        f[x][y][5] = a * (4*rho + 2*eO + epsO + 6*j_x + 3*q_xO - 6*j_y - 3*q_yO - 9*p_xyO);
-        f[x][y][7] = a * (4*rho + 2*eO + epsO + 6*j_x + 3*q_xO + 6*j_y + 3*q_yO + 9*p_xyO);
+        f[x][y][0] = a * (4 * rho - 4 * eO + 4 * epsO);
+        f[x][y][2] =
+            a * (4 * rho - eO - 2 * epsO - 6 * j_x + 6 * q_xO + 9 * p_xxO);
+        f[x][y][4] =
+            a * (4 * rho - eO - 2 * epsO - 6 * j_y + 6 * q_yO - 9 * p_xxO);
+        f[x][y][6] =
+            a * (4 * rho - eO - 2 * epsO + 6 * j_x - 6 * q_xO + 9 * p_xxO);
+        f[x][y][8] =
+            a * (4 * rho - eO - 2 * epsO + 6 * j_y - 6 * q_yO - 9 * p_xxO);
+        f[x][y][1] = a * (4 * rho + 2 * eO + epsO - 6 * j_x - 3 * q_xO +
+                          6 * j_y + 3 * q_yO - 9 * p_xyO);
+        f[x][y][3] = a * (4 * rho + 2 * eO + epsO - 6 * j_x - 3 * q_xO -
+                          6 * j_y - 3 * q_yO + 9 * p_xyO);
+        f[x][y][5] = a * (4 * rho + 2 * eO + epsO + 6 * j_x + 3 * q_xO -
+                          6 * j_y - 3 * q_yO - 9 * p_xyO);
+        f[x][y][7] = a * (4 * rho + 2 * eO + epsO + 6 * j_x + 3 * q_xO +
+                          6 * j_y + 3 * q_yO + 9 * p_xyO);
       }
     }
   }
@@ -1123,13 +1142,13 @@ void collision_streaming() {
         -1 + ((f[x][ly - 1][0] + f[x][ly - 1][2] + f[x][ly - 1][6]) +
               2 * (f[x][ly - 1][1] + f[x][ly - 1][7] + f[x][ly - 1][8])) /
                  (d_top);
-    f[x][ly -1][4] = f[x][ly -1][8] - (2. / 3.) * d_top * vt;
-    
-    f[x][ly -1][5] =
-        f[x][ly -1][1] - (1. / 6.) * d_top * vt + 0.5 * (f[x][ly -1][2] - f[x][ly -1][6]);
+    f[x][ly - 1][4] = f[x][ly - 1][8] - (2. / 3.) * d_top * vt;
 
-    f[x][ly -1][1] =
-        f[x][ly -1][7] - (1. / 6.) * d_top * vt + 0.5 * (f[x][ly -1][6] - f[x][ly -1][2]);
+    f[x][ly - 1][5] = f[x][ly - 1][1] - (1. / 6.) * d_top * vt +
+                      0.5 * (f[x][ly - 1][2] - f[x][ly - 1][6]);
+
+    f[x][ly - 1][1] = f[x][ly - 1][7] - (1. / 6.) * d_top * vt +
+                      0.5 * (f[x][ly - 1][6] - f[x][ly - 1][2]);
   }
 
   for (int y = 1; y < ly - 1; y++) {
@@ -1141,14 +1160,13 @@ void collision_streaming() {
     f[lx - 1][y][1] = f[lx - 2][y + 1][5];  //+uw_h/6;
   }
 
-
   // corner nodes
   f[0][0][7] = f[1][1][3];
   f[lx - 1][0][1] = f[lx - 2][1][5];  //+uw_b/6
   f[0][ly - 1][5] = f[1][ly - 2][1];  //-uw_b/6
   f[lx - 1][ly - 1][3] = f[lx - 2][ly - 2][7];
 
-   // bounce back in obstacles
+  // bounce back in obstacles
   /////////////////////////////////////////////////////////
   //  To calculate force f[][][])                        //
   //  1: articlel of JYD-Mouloud                     //
@@ -1173,8 +1191,10 @@ void collision_streaming() {
                   (2 * delta[x][y][iLB] - 1) * f[next_x][next_y][iLB] /
                       (2 * delta[x][y][iLB]) +
                   3 * (w[iLB] / c) *
-                      (ex[iLB] * (g[i].v1 - (y * dx + Mby - g[i].x2) * g[i].v3) +
-                       ey[iLB] * (g[i].v2 + (x * dx + Mgx - g[i].x1) * g[i].v3)) /
+                      (ex[iLB] *
+                           (g[i].v1 - (y * dx + Mby - g[i].x2) * g[i].v3) +
+                       ey[iLB] *
+                           (g[i].v2 + (x * dx + Mgx - g[i].x1) * g[i].v3)) /
                       delta[x][y][iLB];
             }
             if (delta[x][y][iLB] > 0. && delta[x][y][iLB] < 0.5) {
@@ -1184,8 +1204,10 @@ void collision_streaming() {
                   2 * delta[x][y][iLB] * f[next_x][next_y][iLB + half] +
                   (1 - 2 * delta[x][y][iLB]) * f[next_xx][next_yy][iLB + half] +
                   6 * (w[iLB] / c) *
-                      (ex[iLB] * (g[i].v1 - (y * dx + Mby - g[i].x2) * g[i].v3) +
-                       ey[iLB] * (g[i].v2 + (x * dx + Mgx - g[i].x1) * g[i].v3));
+                      (ex[iLB] *
+                           (g[i].v1 - (y * dx + Mby - g[i].x2) * g[i].v3) +
+                       ey[iLB] *
+                           (g[i].v2 + (x * dx + Mgx - g[i].x1) * g[i].v3));
             }
           }
         }
@@ -1198,15 +1220,17 @@ void collision_streaming() {
 
           else  //(obst[next_x][next_y]==-1)
           {
-            // Calculation is based on JYD-Mouloud (2.3.3) 
+            // Calculation is based on JYD-Mouloud (2.3.3)
             if (delta[x][y][iLB] >= 0.5) {
               f[x][y][iLB] =
                   f[next_x][next_y][iLB - half] / (2 * delta[x][y][iLB]) +
                   (2 * delta[x][y][iLB] - 1) * f[next_x][next_y][iLB] /
                       (2 * delta[x][y][iLB]) +
                   3 * (w[iLB] / c) *
-                      (ex[iLB] * (g[i].v1 - (y * dx + Mby - g[i].x2) * g[i].v3) +
-                       ey[iLB] * (g[i].v2 + (x * dx + Mgx - g[i].x1) * g[i].v3)) /
+                      (ex[iLB] *
+                           (g[i].v1 - (y * dx + Mby - g[i].x2) * g[i].v3) +
+                       ey[iLB] *
+                           (g[i].v2 + (x * dx + Mgx - g[i].x1) * g[i].v3)) /
                       delta[x][y][iLB];
             }
             if (delta[x][y][iLB] > 0. && delta[x][y][iLB] < 0.5) {
@@ -1216,8 +1240,10 @@ void collision_streaming() {
                   2 * delta[x][y][iLB] * f[next_x][next_y][iLB - half] +
                   (1 - 2 * delta[x][y][iLB]) * f[next_xx][next_yy][iLB - half] +
                   6 * (w[iLB] / c) *
-                      (ex[iLB] * (g[i].v1 - (y * dx + Mby - g[i].x2) * g[i].v3) +
-                       ey[iLB] * (g[i].v2 + (x * dx + Mgx - g[i].x1) * g[i].v3));
+                      (ex[iLB] *
+                           (g[i].v1 - (y * dx + Mby - g[i].x2) * g[i].v3) +
+                       ey[iLB] *
+                           (g[i].v2 + (x * dx + Mgx - g[i].x1) * g[i].v3));
             }
           }
         }
@@ -1276,17 +1302,14 @@ void final_density() {
   fprintf(stderr, "final_density: %f\n", sum);
 }
 
-int min(int x, int y) {
-  return (x < y) ? x : y;
-}
-int max(int x, int y) {
-  return (x > y) ? x : y;
-}
+int min(int x, int y) { return (x < y) ? x : y; }
+int max(int x, int y) { return (x > y) ? x : y; }
 
 // ****************************************************************************
 // *   Compute hydrodynamic forces                                          *
 // ****************************************************************************
-void forces_fluid(int nx, int ny, real f[nx][ny][Q], int nbgrains, struct grain g[nbgrains]) {
+void forces_fluid(int nx, int ny, real f[nx][ny][Q], int nbgrains,
+                  struct grain g[nbgrains]) {
   const int half = (Q - 1) / 2;
 
   for (int i = 0; i < nbgrains; ++i) {
@@ -1301,9 +1324,9 @@ void forces_fluid(int nx, int ny, real f[nx][ny][Q], int nbgrains, struct grain 
     const real rbl0 = g[i].r / dx;
 
     const int xi = max(xc - rbl0, 1);
-    const int xf = min(xc + rbl0, nx-2);
+    const int xf = min(xc + rbl0, nx - 2);
     const int yi = max(yc - rbl0, 1);
-    const int yf = min(yc + rbl0, ny-2);
+    const int yf = min(yc + rbl0, ny - 2);
 
     for (int x = xi; x <= xf; ++x) {
       for (int y = yi; y <= yf; ++y) {
@@ -1316,11 +1339,14 @@ void forces_fluid(int nx, int ny, real f[nx][ny][Q], int nbgrains, struct grain 
           if (obst[next_x][next_y] != i) {
             const int halfq = (iLB <= half) ? half : -half;
 
-            const real fnx = (f[x][y][iLB + halfq] + f[next_x][next_y][iLB]) * ex[iLB + halfq];
-            const real fny = (f[x][y][iLB + halfq] + f[next_x][next_y][iLB]) * ey[iLB + halfq];
+            const real fnx = (f[x][y][iLB + halfq] + f[next_x][next_y][iLB]) *
+                             ex[iLB + halfq];
+            const real fny = (f[x][y][iLB + halfq] + f[next_x][next_y][iLB]) *
+                             ey[iLB + halfq];
             fhf1[i] = fhf1[i] + fnx;
             fhf2[i] = fhf2[i] + fny;
-            fhf3[i] = fhf3[i] - fnx * (y - (g[i].x2 - Mby) / dx) + fny * (x - (g[i].x1 - Mgx) / dx);
+            fhf3[i] = fhf3[i] - fnx * (y - (g[i].x2 - Mby) / dx) +
+                      fny * (x - (g[i].x1 - Mgx) / dx);
           }
         }
       }
@@ -1340,7 +1366,7 @@ void acceleration_grains() {
   int jdep;
   real dn, ftest;
   real fn, ft;
-  struct force fji; 
+  struct force fji;
   if (nbsteps % stepFilm == 0 && start == 1) {  // Outfile MGPost
     //   distance normale
     real xOiOj, yOiOj, OiOj;
@@ -1355,7 +1381,7 @@ void acceleration_grains() {
     }
     // Summation of forces on the grains
     for (i = 0; i <= nbgrains - 1; i++) {
-       if (i == 0)
+      if (i == 0)
         jdep = 0;
       else
         jdep = cumul[i - 1];
@@ -1391,7 +1417,7 @@ void acceleration_grains() {
             else
               ft = -ftest;
           }
-          //calculate the normal force
+          // calculate the normal force
           fji.f1 = fn * xn - ft * yn;
           fji.f2 = fn * yn + ft * xn;
           fji.f3 = -ft * g[i].r * murf;
@@ -1400,10 +1426,9 @@ void acceleration_grains() {
           g[neighbours[j]].p += fn;
           g[i].s += ft;
           g[neighbours[j]].s += ft;
-          g[i].slip += fabs(ft) *
-                       (fabs(vt * dt) + (fabs(ft - pft)) / kt);
-          g[neighbours[j]].slip += fabs(ft) *
-                               (fabs(vt * dt) + (fabs(ft - pft)) / kt);
+          g[i].slip += fabs(ft) * (fabs(vt * dt) + (fabs(ft - pft)) / kt);
+          g[neighbours[j]].slip +=
+              fabs(ft) * (fabs(vt * dt) + (fabs(ft - pft)) / kt);
           g[i].rw +=
               fabs(fji.f3) * (fabs(g[i].v3 * dt) + (fabs(fji.f3 - pff)) / kt);
           g[neighbours[j]].rw +=
@@ -1463,9 +1488,9 @@ void acceleration_grains() {
       g[neighbourWallB[i]].a3 = g[neighbourWallB[i]].a3 + fji.f3;
       g[neighbourWallB[i]].fr +=
           fabs(fji.f1) * (fabs(dt * g[i].v1) + fabs(dt2 * g[i].a1) +
-                          (fabs(fji.f1 - pf)) /
-                              kt);  // Friction work at the wall dt2*g[i].a1/2
-      pf = fji.f1;  // Previous force fji.f1
+                          (fabs(fji.f1 - pf)) / kt);  // Friction work at the
+                                                      // wall dt2*g[i].a1/2
+      pf = fji.f1;                                    // Previous force fji.f1
     }
   }
 
@@ -1493,7 +1518,7 @@ void acceleration_grains() {
           fabs(fji.f2) *
           (fabs(dt * g[i].v1) + fabs(dt2 * g[i].a1) +
            (fabs(fji.f2 - pf)) / kt);  // Friction work at the wall
-      pf = fji.f2;  // Previous force fji.f1
+      pf = fji.f2;                     // Previous force fji.f1
     }
   }
 
@@ -1595,9 +1620,8 @@ void VerletWall() {
   }
 }
 
-
 // *******************************************************************************************
-// *   writing obstacle arrays 
+// *   writing obstacle arrays
 // *
 // *******************************************************************************************
 void obst_writing() {
@@ -1744,8 +1768,8 @@ void renderScene(void) {
       g[i].rw = 0.;
       ic = 0.;
       g[i].M11 = g[i].M12 = g[i].M21 = g[i].M22 = 0.;  // Moments
-      g[i].z = 0;   // reset coordination numbers
-      g[i].zz = 0;  
+      g[i].z = 0;  // reset coordination numbers
+      g[i].zz = 0;
 
       g[i].x1 = g[i].x1 + dt * g[i].v1 + dt2 * g[i].a1 / 2.;
       g[i].x2 = g[i].x2 + dt * g[i].v2 + dt2 * g[i].a2 / 2.;
@@ -1764,7 +1788,7 @@ void renderScene(void) {
       g[i].v3 = g[i].v3 + dt * g[i].a3 / 2.;
 
       // Consolidation
-      if (i > (ndgrains -1)) {
+      if (i > (ndgrains - 1)) {
         g[i].v1 = 0.0;
         g[i].v2 = dvelocity;
         g[i].v3 = 0.0;
@@ -1808,26 +1832,37 @@ int main(int argc, char** argv) {
   g = read_sample(argv[1]);
   check_sample(nbgrains, g);
 
-  f = malloc(sizeof(real)*lx*ly*Q); assert(f);
+  f = malloc(sizeof(real) * lx * ly * Q);
+  assert(f);
 
-  obst = malloc(sizeof(int)*lx*ly); assert(obst);
-  act = malloc(sizeof(int)*lx*ly); assert(act);
-  delta = malloc(sizeof(real)*lx*ly*Q); assert(delta);
+  obst = malloc(sizeof(int) * lx * ly);
+  assert(obst);
+  act = malloc(sizeof(int) * lx * ly);
+  assert(act);
+  delta = malloc(sizeof(real) * lx * ly * Q);
+  assert(delta);
 
-  rLB = malloc(sizeof(real)*nbgrains); assert(rLB);
-  cumul = malloc(sizeof(int)*nbgrains); assert(cumul);
-  neighbours = malloc(sizeof(int)*nbgrains*6); assert(neighbours);
-  neighbourWallB = malloc(sizeof(int)*nbgrains); assert(neighbourWallB);
-  neighbourWallR = malloc(sizeof(int)*nbgrains); assert(neighbourWallR);
-  neighbourWallL = malloc(sizeof(int)*nbgrains); assert(neighbourWallL);
-  neighbourWallT = malloc(sizeof(int)*nbgrains); assert(neighbourWallT);
+  rLB = malloc(sizeof(real) * nbgrains);
+  assert(rLB);
+  cumul = malloc(sizeof(int) * nbgrains);
+  assert(cumul);
+  neighbours = malloc(sizeof(int) * nbgrains * 6);
+  assert(neighbours);
+  neighbourWallB = malloc(sizeof(int) * nbgrains);
+  assert(neighbourWallB);
+  neighbourWallR = malloc(sizeof(int) * nbgrains);
+  assert(neighbourWallR);
+  neighbourWallL = malloc(sizeof(int) * nbgrains);
+  assert(neighbourWallL);
+  neighbourWallT = malloc(sizeof(int) * nbgrains);
+  assert(neighbourWallT);
 
-  memset(cumul, 0, sizeof(int)*nbgrains);
-  memset(neighbours, 0, sizeof(int)*nbgrains*6);
-  memset(neighbourWallB, 0, sizeof(int)*nbgrains);
-  memset(neighbourWallR, 0, sizeof(int)*nbgrains);
-  memset(neighbourWallL, 0, sizeof(int)*nbgrains);
-  memset(neighbourWallT, 0, sizeof(int)*nbgrains);
+  memset(cumul, 0, sizeof(int) * nbgrains);
+  memset(neighbours, 0, sizeof(int) * nbgrains * 6);
+  memset(neighbourWallB, 0, sizeof(int) * nbgrains);
+  memset(neighbourWallR, 0, sizeof(int) * nbgrains);
+  memset(neighbourWallL, 0, sizeof(int) * nbgrains);
+  memset(neighbourWallT, 0, sizeof(int) * nbgrains);
 
   //  c1 = malloc(sizeof(struct contact)*nbgrainsMax*nbgrainsMax); assert(c1);
   //  c2 = malloc(sizeof(struct contact)*nbgrains); assert(c2);
@@ -1835,10 +1870,14 @@ int main(int argc, char** argv) {
   //  memset(c1, 0, sizeof(struct contact)*nbgrains*nbgrains);
   //  memset(c2, 0, sizeof(struct contact)*nbgrains);
 
-  fhf = malloc(sizeof(struct force)*nbgrains); assert(fhf);
-  fhf1 = malloc(sizeof(real)*nbgrains); assert(fhf1);
-  fhf2 = malloc(sizeof(real)*nbgrains); assert(fhf2);
-  fhf3 = malloc(sizeof(real)*nbgrains); assert(fhf3);
+  fhf = malloc(sizeof(struct force) * nbgrains);
+  assert(fhf);
+  fhf1 = malloc(sizeof(real) * nbgrains);
+  assert(fhf1);
+  fhf2 = malloc(sizeof(real) * nbgrains);
+  assert(fhf2);
+  fhf3 = malloc(sizeof(real) * nbgrains);
+  assert(fhf3);
 
   init_density(lx, ly, f);
 
@@ -1850,7 +1889,7 @@ int main(int argc, char** argv) {
   xG = -G * sin(angleG);
   yG = -G * cos(angleG);
 
-  dx = (1./scale) * (Mdx - Mgx) / (lx - 1);
+  dx = (1. / scale) * (Mdx - Mgx) / (lx - 1);
   printf("no space %le\n", dx);
 
   // Compute the time step for DEM
@@ -1867,7 +1906,7 @@ int main(int argc, char** argv) {
   for (i = 0; i <= nbgrains - 1; i++) {
     rLB[i] = reductionR * g[i].r / dx;
     // Consolidation: Piston grains which are more permeable (r = 0.7R)
-    if (i > (ndgrains -1)) rLB[i] = reductionConsolidation * g[i].r / dx;
+    if (i > (ndgrains - 1)) rLB[i] = reductionConsolidation * g[i].r / dx;
   }
   init_obst();
 
