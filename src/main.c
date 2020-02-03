@@ -237,6 +237,16 @@ void swap(real* a, real* b) {
 void write_vtk(int nx, int ny, real f[nx][ny][Q], int nbgrains, struct grain g[nbgrains]) {
   char filename[255];
   sprintf(filename, "lbm-dem_%.6i", nFile);
+  char gpress[255];
+  sprintf(gpress, "grain_pressure_%.6i", nFile);
+  char gvel[255];
+  sprintf(gvel, "grain_velocity_%.6i", nFile);
+  char gacc[255];
+  sprintf(gacc, "grain_acceleration_%.6i", nFile);
+  char fpress[255];
+  sprintf(fpress, "fluid_pressure_%.6i", nFile);
+  char fvel[255];
+  sprintf(fvel, "fluid_velocity_%.6i", nFile);
 
   int dims[] = {nx, ny, 1};
   float *xs = malloc(sizeof(float)*nx);
@@ -248,12 +258,16 @@ void write_vtk(int nx, int ny, real f[nx][ny][Q], int nbgrains, struct grain g[n
   *zs = 0;
 
   int nvars = 5;
-  int vardims[] = {1, 3, 3, 1, 3};
-  int centering[] = {1, 1, 1, 1, 1};
+  int vardims[5][1] = {{1}, {3}, {3}, {1}, {3}};
+  int centering[5][1] = {{1}, {1}, {1}, {1}, {1}};
 
-  char *varnames[] = {
-    "grain_pressure", "grain_velocity", "grain_acceleration",
-    "fluid_pressure", "fluid_velocity" };
+  char* varnames[5][1] = {{"grain_pressure"},
+                        {"grain_velocity"},
+                        {"grain_acceleration"},
+                        {"fluid_pressure"},
+                        {"fluid_velocity"}};
+
+  char* filenames[] = {gpress, gvel, gacc, fpress, fvel};
 
   float (*grain_pressure    )[nx]    = malloc(sizeof(float)*nx*ny);
   float (*grain_velocity    )[nx][3] = malloc(sizeof(float)*nx*ny*3);
@@ -261,9 +275,11 @@ void write_vtk(int nx, int ny, real f[nx][ny][Q], int nbgrains, struct grain g[n
   float (*fluid_pressure    )[nx]    = malloc(sizeof(float)*nx*ny);
   float (*fluid_velocity    )[nx][3] = malloc(sizeof(float)*nx*ny*3);
 
-  float *vars[] = {
-    (float*)grain_pressure, (float*)grain_velocity, (float*)grain_acceleration,
-    (float*)fluid_pressure, (float*)fluid_velocity };
+  float* vars[5][1] = {{(float*)grain_pressure},
+                       {(float*)grain_velocity},
+                       {(float*)grain_acceleration},
+                       {(float*)fluid_pressure},
+                       {(float*)fluid_velocity}};
 
   for (int y = 0; y < ny; y++) {
     for (int x = 0; x < nx; x++) {
@@ -306,7 +322,10 @@ void write_vtk(int nx, int ny, real f[nx][ny][Q], int nbgrains, struct grain g[n
     }
   }
 
-  write_rectilinear_mesh(filename, 1, dims, xs, ys, zs, nvars, vardims, centering, varnames, vars);
+  // write_rectilinear_mesh(filename, 1, dims, xs, ys, zs, nvars, vardims, centering, varnames, vars);
+  for (int i = 0; i < 5; ++i)
+    write_rectilinear_mesh(filenames[i], 1, dims, xs, ys, zs, 1, vardims[i],
+                           centering[i], varnames[i], vars[i]);
 
   free(xs);
   free(ys);
