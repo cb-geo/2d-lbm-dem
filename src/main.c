@@ -17,7 +17,7 @@
 
 // Maximum number of soil grains
 #ifndef nbgrainsMax
-#define nbgrainsMax 56000
+#define nbgrainsMax 40000
 #endif
 
 // Dimension of the LBM Fluid domain
@@ -25,10 +25,10 @@
 #define scale 1.
 #endif
 #ifndef lx
-#define lx 7000
+#define lx 7826
 #endif
 #ifndef ly
-#define ly 5000
+#define ly 2325
 #endif
 
 #ifdef SINGLE_PRECISION
@@ -75,9 +75,9 @@ real rho_moy = 1000;  // air density =1 or water =1000 or 999.7 at 20
 real rho_outlet, q_outlet;
 
 // relaxation parameter
-real tau = 0.506;
-real s2 = 1.5, s3 = 1.4, s5 = 1.5, s7 = 1.5, s8 = 1.8868,
-       s9 = 1.8868;  // s8=1.6666667,s9=1.6666667;
+real tau = 0.504;
+real s2 = 1.5, s3 = 1.4, s5 = 1.5, s7 = 1.5, s8 = 1.9841,
+       s9 = 1.9841;  // s8=1.6666667,s9=1.6666667;
 
 // obstacle array
 int (* restrict obst)[ly];
@@ -91,11 +91,11 @@ real rMin_LB = 10.;
 // Fluid kinematic viscosity
 real nu = 1e-6;  // 15.5e-6 for air and 1e-6 for water at 293K or 20C
 real (* restrict press)[ly];
-real reductionR = 0.95;  // LBM reduced grain diameter
+real reductionR = 0.85;  // LBM reduced grain diameter
 
 //***********   Data DEM    ********************
 real G = 9.81;
-real angleG = -0.0872665;
+real angleG = 0.0;
 real xG, yG;
 real dt;  //=5.e-8;
 real dt2;
@@ -114,7 +114,7 @@ real murf = 0.01;  // 0.01
 real r = 1e-3;  // 5e-4;v
 real distVerlet = 5e-4;  // changed to 1e-6 from 1e-3 for error
 long UpdateVerlet = 100.;
-real dtt = 0.0;  // Time after which wall to prepare sample is removed
+real dtt = 0.;  // Time after which wall to prepare sample is removed
 real iterDEM = 100.;  // number of DEM iterations per LBM
 
 // Tracked stats
@@ -135,12 +135,12 @@ real ic = 0;
 int npDEM;
 real *rLB;
 
-int stepView = 100;
-int stepPrint = 200;
-int stepConsole = 100;
+int stepView = 400;
+int stepPrint = 800;
+int stepConsole = 400;
 
-int stepStrob = 1000;  //visualisation steps
-int stepFilm = 2000;
+int stepStrob = 4000;  //visualisation steps
+int stepFilm = 8000;
 
 FILE* s_stats;
 
@@ -336,7 +336,7 @@ void write_vtk(int nx, int ny, real f[nx][ny][Q], int nbgrains, struct grain g[n
   free(fluid_velocity);
   free(fluid_pressure);
 }
-
+ 
 void write_DEM() {
   int i;
   char filename[25];
@@ -446,7 +446,7 @@ void write_forces() {
   // sprintf(filename,"DEM_Grains%.6i.dat",nFile);
   sprintf(nomfile, "DEM%.6i.ps", nFile);
   outfile1 = fopen(nomfile, "w");
-  real margin = 10 * g[0].r, hrx1 = 4000, hry2 = 1000;
+  real margin = 10 * g[0].r, hrx1 = lx, hry2 = ly;
   fprintf(outfile1, "%%!PS-Adobe-3.0 EPSF-3.0 \n");
   fprintf(outfile1, "%%%BoundingBox: %f %f %f %f \n", -margin, -margin,
           hrx1 + margin, hry2 + margin);
@@ -964,6 +964,7 @@ struct force force_WallR(long i, real dn) {
 // to fluid   *
 // *******************************************************************************************
 void reinit_obst_density() {
+#pragma omp parallel for
   for (int x = 1; x < lx - 1; x++) {
     for (int y = 1; y < ly - 1; y++) {
       int i = obst[x][y];
@@ -992,6 +993,7 @@ void obst_construction() {
   // c.d.g. sphere
   //  real xc,yc;
   real dist2, aa, bb, cc, r2, xc, yc, R2, rbl0;
+#pragma omp parallel for
   for (x = 1; x < lx - 1; x++) {
     for (y = 1; y < ly - 1; y++) {
       obst[x][y] = -1;
@@ -1001,6 +1003,8 @@ void obst_construction() {
       }
     }
   }
+
+#pragma omp parallel for
   for (i = 0; i < nbgrains; i++) {
     xc = (g[i].x1 - Mgx) / dx;
     yc = (g[i].x2 - Mby) / dx;
@@ -1070,6 +1074,7 @@ void collision_streaming() {
 
 // Post-collision part computation
 // (Yu-Mei-Luo-Shyy)
+#pragma omp parallel for
   for (int x = 1; x < lx - 1; x++) {
     for (int y = 1; y < ly - 1; y++) {
       if (obst[x][y] == -1) {
@@ -1286,6 +1291,7 @@ void forces_fluid(int nx, int ny, real f[nx][ny][Q], int nbgrains, struct grain 
     fhf3[i] = 0;
   }
 
+#pragma omp parallel for
   for (int i = 0; i < nbgrains; ++i) {
     const real xc = (g[i].x1 - Mgx) / dx;
     const real yc = (g[i].x2 - Mby) / dx;
@@ -1318,6 +1324,7 @@ void forces_fluid(int nx, int ny, real f[nx][ny][Q], int nbgrains, struct grain 
     }
   }
 
+#pragma omp parallel for
   for (int i = 0; i < nbgrains; ++i) {
     fhf1[i] *= rho_moy * 9 * nu * nu / (dx * (tau - 0.5) * (tau - 0.5));
     fhf2[i] *= rho_moy * 9 * nu * nu / (dx * (tau - 0.5) * (tau - 0.5));
@@ -1880,11 +1887,7 @@ int main(int argc, char** argv) {
           "RW %le Time %s \n",
           nbsteps, nbsteps * dt, energie_cin, energy_p, SE, WF, INCE, TSLIP,
           TRW, asctime(ptr_time));  // IFR TSE TBW
-#if 1
-  } while (nbsteps <= 2000);
-#else
   } while (nbsteps * dt <= duration);
-#endif
   final_density();
 
   time(&time_raw_format);
